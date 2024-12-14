@@ -321,26 +321,25 @@ endblock %} {% block content %}
     document.getElementById("uploadButton").addEventListener("click", async () => {
       const imageInput = document.getElementById("image");
       const file = imageInput.files[0];
-
+  
       if (!file) {
         alert("Silakan pilih file sebelum mengunggah.");
         return;
       }
-
-      const apiUrl =
-        "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage//uploaddetection"; // Ganti dengan endpoint API Gateway Anda
+  
+      const apiUrl = "https://your-api-gateway-url/uploaddetection"; // Ganti dengan URL API Gateway Anda
       const formData = new FormData();
       formData.append("image", file);
-
+  
       try {
         const response = await fetch(apiUrl, {
           method: "POST",
           body: formData,
         });
-
+  
         if (response.ok) {
           const result = await response.json();
-          // Redirect ke detection-2.html dengan hasil dari Lambda
+          // Redirect ke halaman hasil dengan data dari API
           window.location.href = `detection-2.html?result_image_url=${encodeURIComponent(
             result.result_image_url
           )}&message=${encodeURIComponent(result.message)}`;
@@ -353,7 +352,7 @@ endblock %} {% block content %}
         alert("Terjadi kesalahan: " + error.message);
       }
     });
-  </script>
+  </script>  
   </div>
 </div>
 
