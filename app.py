@@ -17,7 +17,7 @@ users_table = dynamodb.Table('users')  # Replace with your actual table name
 uploads_table = dynamodb.Table('uploads')  # Replace with your actual table name
 guest_usage_table = dynamodb.Table('guest_usage')  # Replace with your actual table name
 
-# Function to get guest usage (replace with DynamoDB query)
+# Function to get guest usage from DynamoDB
 def get_guest_usage():
     response = guest_usage_table.get_item(Key={'id': 'guest_usage'})
     if 'Item' in response:
@@ -25,32 +25,27 @@ def get_guest_usage():
     else:
         return 0, None
 
-def get_guest_usage():
-    guest_usage = guest_usage_collection.find_one({'_id': 'guest_usage'})
-    if guest_usage:
-        return guest_usage.get('uploads', 0), guest_usage.get('chatbot_interactions', 0)
-    # Jika belum ada data, inisialisasi dengan 0
-    return 0, 0
-
-
+# Function to update guest usage in DynamoDB
 def update_guest_usage(uploads, interactions):
-    guest_usage_collection.update_one(
-        {'_id': 'guest_usage'},
-        {'$set': {'uploads': uploads, 'chatbot_interactions': interactions}},
-        upsert=True  # Jika tidak ada, buat baru
+    guest_usage_table.update_item(
+        Key={'id': 'guest_usage'},
+        UpdateExpression="SET uploads = :uploads, chatbot_interactions = :interactions, last_updated = :last_updated",
+        ExpressionAttributeValues={
+            ':uploads': uploads,
+            ':interactions': interactions,
+            ':last_updated': boto3.dynamodb.types.Timestamp.now()  # Optional: store the timestamp
+        },
+        ReturnValues="UPDATED_NEW",
+        Upsert=True  # If the item does not exist, it will create a new one
     )
 
-#Helper 
+# Helper function to get guest uploads count from session
 def get_guest_uploads_count():
     return session.get('guest_uploads', 0)
 
+# Helper function to get guest chatbot interactions count from session
 def get_guest_chatbot_interactions():
     return session.get('guest_chatbot_interactions', 0)
-
-#deklarasi fungsi manggil data dari file chatbot.json
-def load_chatbot_data():
-    with open('chatbot.json', 'r', encoding='utf-8') as f:
-        return json.load(f)
 
 #ngambil data dari json
 chatbot_data = load_chatbot_data()
