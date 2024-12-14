@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-from pymongo import MongoClient
+import boto3
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
@@ -9,28 +9,35 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whitebrim'
 app.config.from_object('config.Config')
 
-#konfigurasi MongoDB
-mongo_client = MongoClient(app.config['MONGO_URI'])
-db = mongo_client['melanoma_scan']
-users_collection = db['users']
-uploads_collection = db['uploads']
-guest_usage_collection = db['guest_usage']
+# Configure DynamoDB (ensure AWS credentials are configured properly)
+dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Adjust region as needed
 
-#buat direktori penyimpanan file
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Set up DynamoDB tables
+users_table = dynamodb.Table('users')  # Replace with your actual table name
+uploads_table = dynamodb.Table('uploads')  # Replace with your actual table name
+guest_usage_table = dynamodb.Table('guest_usage')  # Replace with your actual table name
 
+# Function to get guest usage (replace with DynamoDB query)
+def get_guest_usage():
+    response = guest_usage_table.get_item(Key={'id': 'guest_usage'})
+    if 'Item' in response:
+        return response['Item']['uploads'], response['Item']['last_updated']
+    else:
+        return 0, None
 
 def get_guest_usage():
     guest_usage = guest_usage_collection.find_one({'_id': 'guest_usage'})
     if guest_usage:
         return guest_usage.get('uploads', 0), guest_usage.get('chatbot_interactions', 0)
+    # Jika belum ada data, inisialisasi dengan 0
     return 0, 0
+
 
 def update_guest_usage(uploads, interactions):
     guest_usage_collection.update_one(
         {'_id': 'guest_usage'},
         {'$set': {'uploads': uploads, 'chatbot_interactions': interactions}},
-        upsert=True
+        upsert=True  # Jika tidak ada, buat baru
     )
 
 #Helper 
@@ -152,7 +159,7 @@ def logout():
 @app.route('/detection', methods=['GET', 'POST'])
 def detection():
     user_logged_in = 'user_id' in session
-    guest_uploads, _ = get_guest_usage()
+    guest_uploads, _ = get_guest_usage()  # Mendapatkan nilai guest_uploads dari MongoDB
     modal_open = False
 
     if request.method == 'POST':
@@ -176,7 +183,7 @@ def detection():
 
                 if not user_logged_in:
                     guest_uploads += 1
-                    update_guest_usage(guest_uploads, _)
+                    update_guest_usage(guest_uploads, _)  # Update database
 
                 flash('Image uploaded successfully!', 'success')
                 return redirect(url_for('detection_result', user_logged_in=user_logged_in))
@@ -185,19 +192,17 @@ def detection():
         'detection-1.html', 
         user_logged_in=user_logged_in, 
         modal_open=modal_open,
-        guest_uploads=guest_uploads
+        guest_uploads=guest_uploads  # Pass guest_uploads to the template
     )
+
 @app.route('/detection/result')
 def detection_result():
-    #Cek apakah pengguna sudah login
-    user_logged_in = 'user_id' in session
-    
-    uploaded_image = session.get('uploaded_image')
-    if not uploaded_image:
-        flash('No image uploaded!', 'danger')
-        return redirect(url_for('detection'))
+    # Ambil parameter dari URL
+    file_name = request.args.get('file_name', 'No file uploaded')
+    message = request.args.get('message', 'No message received')
 
-    return render_template('detection-2.html', uploaded_image=uploaded_image, user_logged_in=user_logged_in)
+    # Pass data ke template HTML
+    return render_template('detection-2.html', file_name=file_name, message=message)
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
 def delete_image(filename):

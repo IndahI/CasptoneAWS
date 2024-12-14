@@ -1,0 +1,7 @@
+*.py text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+* text=auto
+*.json text eol=lf
+venv/* text eol=lf
+venv/Lib/site-packages/setuptools/_distutils/py38compat.py text eol=lf
