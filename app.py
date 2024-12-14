@@ -13,7 +13,7 @@ app.config.from_object('config.Config')
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Adjust region as needed
 
 # Set up DynamoDB tables
-users_table = dynamodb.Table('datausers')  # Replace with your actual table name
+users_table = dynamodb.Table('testdatauser')  # Replace with your actual table name
 uploads_table = dynamodb.Table('uploads')  # Replace with your actual table name
 guest_usage_table = dynamodb.Table('guest_usage')  # Replace with your actual table name
 
