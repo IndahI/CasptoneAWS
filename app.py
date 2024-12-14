@@ -159,37 +159,12 @@ def logout():
     flash('Logged out successfully!', 'success')
     return redirect(url_for('index'))
 
-@app.route('/uploaddetection', methods=['POST'])
-def upload_detection():
+@app.route('/detection', methods=['GET'])
+def detection():
     """
-    Endpoint untuk memproses unggahan gambar tanpa limitasi untuk guest.
+    Endpoint untuk menampilkan halaman detection-1.html.
     """
-    try:
-        image = request.files['image']
-        if image:
-            # Simpan gambar ke folder yang telah dikonfigurasi
-            filename = secure_filename(image.filename)
-            image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            image.save(image_path)
-
-            # Simpan metadata unggahan ke DynamoDB
-            upload_data = {
-                'user_id': session.get('user_id', 'guest'),
-                'filename': filename
-            }
-            uploads_table.put_item(Item=upload_data)
-
-            # Buat respons dengan URL hasil unggahan
-            response = {
-                'message': 'Image uploaded successfully!',
-                'result_image_url': f"https://your-image-bucket.s3.amazonaws.com/{filename}"
-            }
-            return jsonify(response), 200
-        else:
-            return jsonify({'message': 'No image uploaded'}), 400
-    except Exception as e:
-        return jsonify({'message': str(e)}), 500
-
+    return render_template('detection-1.html')
 
 @app.route('/detection/result')
 def detection_result():
