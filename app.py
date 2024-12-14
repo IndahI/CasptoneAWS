@@ -13,7 +13,7 @@ app.config.from_object('config.Config')
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')  # Adjust region as needed
 
 # Set up DynamoDB tables
-users_table = dynamodb.Table('users')  # Replace with your actual table name
+users_table = dynamodb.Table('datausers')  # Replace with your actual table name
 uploads_table = dynamodb.Table('uploads')  # Replace with your actual table name
 guest_usage_table = dynamodb.Table('guest_usage')  # Replace with your actual table name
 
@@ -47,9 +47,20 @@ def get_guest_uploads_count():
 def get_guest_chatbot_interactions():
     return session.get('guest_chatbot_interactions', 0)
 
-#ngambil data dari json
+# Load chatbot data from a JSON file
+def load_chatbot_data():
+    with open('chatbot.json', 'r', encoding='utf-8') as f:
+        return json.load(f)
+
 chatbot_data = load_chatbot_data()
 
+# Function to get user data from DynamoDB based on user ID
+def get_user_data(username):
+    response = users_table.get_item(Key={'username': username})
+    if 'Item' in response:
+        return response['Item']
+    else:
+        return None  # Return None if no user data is found
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -57,12 +68,12 @@ def login():
         username = request.form['username']
         password = request.form['password']
 
-        user = users_collection.find_one({'username': username})
-        if user and check_password_hash(user['password'], password):
-            session['user_id'] = str(user['_id'])
-            session['username'] = user['username']
-            session['email'] = user['email']
-            session.pop('guest_uploads', None) 
+        user_data = get_user_data(username)
+        if user_data and check_password_hash(user_data['password'], password):
+            session['user_id'] = user_data['userid']
+            session['username'] = user_data['username']
+            session['email'] = user_data['email']
+            session.pop('guest_uploads', None)
             flash('Logged in successfully!', 'success')
             return redirect(url_for('index'))
 
@@ -79,10 +90,9 @@ def index():
 
 @app.route('/contact')
 def contact():
-    #Cek apakah pengguna sudah login
+    # Cek apakah pengguna sudah login
     user_logged_in = 'user_id' in session
     return render_template('contact.html', user_logged_in=user_logged_in)
-
 
 @app.route('/chatbot', methods=['GET', 'POST'])
 def chatbot():
@@ -105,7 +115,6 @@ def chatbot():
 
     return render_template('chatbot.html', user_logged_in=user_logged_in)
 
-
 @app.route('/get_response/<message>')
 def get_response(message):
     response = chatbot_data.get(message.lower(), "Bot tidak mengerti pertanyaan Anda.")
@@ -113,7 +122,7 @@ def get_response(message):
 
 @app.route('/about')
 def about():
-    #Cek apakah pengguna sudah login
+    # Cek apakah pengguna sudah login
     user_logged_in = 'user_id' in session
     return render_template('about.html', user_logged_in=user_logged_in)
 
@@ -124,21 +133,20 @@ def register():
         username = request.form['username']
         password = request.form['password']
 
-        if users_collection.find_one({'email': email}):
-            flash('Email is already in use!', 'danger')
-            return redirect(url_for('register'))
-
-        if users_collection.find_one({'username': username}):
+        if get_user_data(username):
             flash('Username is already taken!', 'danger')
             return redirect(url_for('register'))
 
         hashed_password = generate_password_hash(password)
 
-        users_collection.insert_one({
-            'email': email,
-            'username': username,
-            'password': hashed_password
-        })
+        users_table.put_item(
+            Item={
+                'userid': username,  # Assuming 'username' as 'userid'
+                'email': email,
+                'username': username,
+                'password': hashed_password
+            }
+        )
 
         flash('Registration successful! Please login.', 'success')
         return redirect(url_for('login'))
@@ -154,7 +162,7 @@ def logout():
 @app.route('/detection', methods=['GET', 'POST'])
 def detection():
     user_logged_in = 'user_id' in session
-    guest_uploads, _ = get_guest_usage()  # Mendapatkan nilai guest_uploads dari MongoDB
+    guest_uploads, _ = get_guest_usage()  # Mendapatkan nilai guest_uploads dari DynamoDB
     modal_open = False
 
     if request.method == 'POST':
@@ -172,7 +180,7 @@ def detection():
                     'user_id': session.get('user_id'),
                     'filename': filename
                 }
-                uploads_collection.insert_one(upload_data)
+                uploads_table.put_item(Item=upload_data)
 
                 session['uploaded_image'] = filename
 
@@ -192,11 +200,8 @@ def detection():
 
 @app.route('/detection/result')
 def detection_result():
-    # Ambil parameter dari URL
     file_name = request.args.get('file_name', 'No file uploaded')
     message = request.args.get('message', 'No message received')
-
-    # Pass data ke template HTML
     return render_template('detection-2.html', file_name=file_name, message=message)
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
