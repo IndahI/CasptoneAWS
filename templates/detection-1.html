@@ -387,7 +387,7 @@ endblock %} {% block content %}
   const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
   console.log('Base64 Image:', base64Image); // Log base64 gambar
   
-  const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
+  const apiUrl = "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage/uploadgambar"; // Ganti dengan endpoint API yang benar
   
   fetch(apiUrl, {
     method: 'POST',
