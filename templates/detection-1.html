@@ -384,35 +384,35 @@ endblock %} {% block content %}
     // Membaca file gambar dan mengkonversi ke base64
     const reader = new FileReader();
     reader.onloadend = function () {
-      const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
+  const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
+  console.log('Base64 Image:', base64Image); // Log base64 gambar
+  
+  const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
+  
+  fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      body: base64Image // Mengirimkan base64 dari gambar ke Lambda
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    console.log('API Response:', data); // Log respons dari API
+    if (data && data.file_url) {
+      alert('Gambar berhasil diupload. URL: ' + data.file_url);
+    } else {
+      alert('Gagal mengupload gambar');
+    }
+  })
+  .catch(error => {
+    console.error('Error uploading image:', error);
+    alert('Terjadi kesalahan saat mengupload gambar');
+  });
+};
 
-      const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
-
-      // Mengirim data ke API Gateway
-      fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          body: base64Image // Mengirimkan base64 dari gambar ke Lambda
-        })
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data && data.file_url) {
-          alert('Gambar berhasil diupload. URL: ' + data.file_url);
-        } else {
-          alert('Gagal mengupload gambar');
-        }
-      })
-      .catch(error => {
-        console.error('Error uploading image:', error);
-        alert('Terjadi kesalahan saat mengupload gambar');
-      });
-    };
-
-    reader.readAsDataURL(file); // Membaca file gambar sebagai base64
   });
 
   // Bagian tidak digunakan untuk saat ini, tetapi disimpan sebagai referensi
