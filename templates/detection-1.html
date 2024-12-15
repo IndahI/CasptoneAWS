@@ -445,52 +445,46 @@ endblock %} {% block content %}
 
     reader.readAsDataURL(file); // Membaca file sebagai URL data
   });
-
-  // Fungsi unggah gambar ke API Gateway
-  document.getElementById("uploadButton").addEventListener("click", async () => {
-    const imageInput = document.getElementById("image");
-    const file = imageInput.files[0];
+  function uploadImage() {
+    const fileInput = document.getElementById('imageInput');
+    const file = fileInput.files[0];
 
     if (!file) {
-        alert("Silakan pilih file sebelum mengunggah.");
-        return;
+      alert('Please select an image file');
+      return;
     }
 
-    const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti endpoint ke /uploadgambar
-    const formData = new FormData();
-    formData.append("image", file);
+    // Membaca file gambar dan mengkonversi ke binary data
+    const reader = new FileReader();
+    reader.onloadend = function () {
+      const imageBinary = reader.result.split(',')[1]; // Mengambil data biner dari base64
 
-    try {
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          body: formData,
-          headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/octet-stream"  // Ganti Content-Type sesuai dengan binary data
-          }
-        });
+      // Mengirim data ke API
+      const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
 
-        // Periksa apakah response.ok, kemudian proses JSON-nya
-        if (response.ok) {
-            const result = await response.json();
-            alert("Gambar berhasil diunggah: " + result.message);
-
-            // Tampilkan gambar hasil proses jika ada
-            if (result.result_image_base64) {
-                const imageElement = document.createElement("img");
-                imageElement.src = `data:image/jpeg;base64,${result.result_image_base64}`;
-                document.body.appendChild(imageElement);
-            }
+      fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/png', // Tipe konten untuk PNG
+        },
+        body: Uint8Array.from(atob(imageBinary), c => c.charCodeAt(0)) // Mengonversi base64 menjadi binary
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data && data.file_url) {
+          alert('Gambar berhasil diupload. URL: ' + data.file_url);
         } else {
-            // Tangani error jika respons tidak ok
-            const errorData = await response.json();
-            alert("Gagal mengunggah: " + (errorData.message || response.statusText));
+          alert('Gagal mengupload gambar');
         }
-    } catch (error) {
-        console.error("Error:", error);
-        alert("Terjadi kesalahan: " + error.message);
-    }
-  });
+      })
+      .catch(error => {
+        console.error('Error uploading image:', error);
+        alert('Terjadi kesalahan saat mengupload gambar');
+      });
+    };
+
+    reader.readAsDataURL(file); // Membaca file gambar sebagai base64
+  }
   // Bagian tidak digunakan untuk saat ini, tetapi disimpan sebagai referensi
   // - Menangani gambar hasil proses API secara lebih kompleks
   // - Tambahkan validasi tambahan jika diperlukan
