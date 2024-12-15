@@ -465,7 +465,8 @@ endblock %} {% block content %}
           method: "POST",
           body: formData,
           headers: {
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "Content-Type": "application/octet-stream"  // Ganti Content-Type sesuai dengan binary data
           }
         });
 
@@ -490,7 +491,6 @@ endblock %} {% block content %}
         alert("Terjadi kesalahan: " + error.message);
     }
   });
-
   // Bagian tidak digunakan untuk saat ini, tetapi disimpan sebagai referensi
   // - Menangani gambar hasil proses API secara lebih kompleks
   // - Tambahkan validasi tambahan jika diperlukan
