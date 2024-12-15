@@ -456,7 +456,7 @@ endblock %} {% block content %}
         return;
     }
 
-    const apiUrl = "https://melanomascan.my.id/uploadgambar"; // Ganti endpoint ke /uploadgambar
+    const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti endpoint ke /uploadgambar
     const formData = new FormData();
     formData.append("image", file);
 
@@ -469,6 +469,7 @@ endblock %} {% block content %}
           }
         });
 
+        // Periksa apakah response.ok, kemudian proses JSON-nya
         if (response.ok) {
             const result = await response.json();
             alert("Gambar berhasil diunggah: " + result.message);
@@ -480,6 +481,7 @@ endblock %} {% block content %}
                 document.body.appendChild(imageElement);
             }
         } else {
+            // Tangani error jika respons tidak ok
             const errorData = await response.json();
             alert("Gagal mengunggah: " + (errorData.message || response.statusText));
         }
