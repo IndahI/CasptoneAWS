@@ -6,6 +6,7 @@ from boto3.dynamodb.conditions import Key, Attr
 import os
 import json
 import boto3
+import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whitebrim'
@@ -216,7 +217,7 @@ def logout():
 @app.route('/detection')
 def detection():
     return render_template('detection-1.html')
-    
+
 @app.route('/detection/result')
 def detection_result():
     #Cek apakah pengguna sudah login
