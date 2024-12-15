@@ -259,6 +259,7 @@ endblock %} {% block content %}
     }
   }
 </style>
+
 <!-- Main Content -->
 <div class="main-container">
   <div class="main-box">
@@ -334,87 +335,88 @@ endblock %} {% block content %}
   }
 </style>
 
-<!-- Script -->
 <script>
   // Menangani file input dan menampilkan preview gambar
-  document.getElementById("image").addEventListener("change", function () {
-    const file = this.files[0]; // Ambil file yang diunggah
-    
-    // Validasi apakah file dipilih
-    if (!file) {
-      document.getElementById("file-name").textContent = "Belum ada file yang dipilih";
-      document.getElementById("file-name").style.display = "block";
-      return;
-    }
+document.getElementById("image").addEventListener("change", function () {
+  const file = this.files[0]; // Ambil file yang diunggah
   
-    // Validasi apakah file adalah gambar
-    if (!file.type.startsWith("image/")) {
-      alert("Silakan pilih file gambar yang valid.");
-      return;
-    }
-  
-    // Tampilkan nama file
-    document.getElementById("file-name").textContent = file.name;
+  // Validasi apakah file dipilih
+  if (!file) {
+    document.getElementById("file-name").textContent = "Belum ada file yang dipilih";
     document.getElementById("file-name").style.display = "block";
-  
-    // Membaca file dengan FileReader
-    const reader = new FileReader();
-    reader.onload = function (e) {
-      const previewImage = document.getElementById("previewImage");
-      previewImage.src = e.target.result; // Mengatur src gambar ke hasil FileReader
-      previewImage.style.display = "block"; // Menampilkan gambar
-    };
-    reader.onerror = function () {
-      alert("Gagal membaca file. Silakan coba lagi.");
-    };
-  
-    reader.readAsDataURL(file); // Membaca file sebagai URL data
-  });
+    return;
+  }
 
-  // Fungsi untuk mengupload gambar ke Lambda
-  document.getElementById('uploadButton').addEventListener('click', function () {
-    const fileInput = document.getElementById('image'); // Ganti dengan ID input file yang sesuai
-    const file = fileInput.files[0];
+  // Validasi apakah file adalah gambar
+  if (!file.type.startsWith("image/")) {
+    alert("Silakan pilih file gambar yang valid.");
+    return;
+  }
+
+  // Tampilkan nama file
+  document.getElementById("file-name").textContent = file.name;
+  document.getElementById("file-name").style.display = "block";
+
+  // Membaca file dengan FileReader
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const previewImage = document.getElementById("previewImage");
+    previewImage.src = e.target.result; // Mengatur src gambar ke hasil FileReader
+    previewImage.style.display = "block"; // Menampilkan gambar
+  };
+  reader.onerror = function () {
+    alert("Gagal membaca file. Silakan coba lagi.");
+  };
+
+  reader.readAsDataURL(file); // Membaca file sebagai URL data
+});
+
+// Fungsi untuk mengupload gambar ke Lambda
+document.getElementById('uploadButton').addEventListener('click', function () {
+  const fileInput = document.getElementById('image'); // Ganti dengan ID input file yang sesuai
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    alert('Please select an image file');
+    return;
+  }
+
+  // Membaca file gambar dan mengkonversi ke base64
+  const reader = new FileReader();
+  reader.onloadend = function () {
+    const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
+    console.log('Base64 Image:', base64Image); // Log base64 gambar
     
-    if (!file) {
-      alert('Please select an image file');
-      return;
-    }
-
-    // Membaca file gambar dan mengkonversi ke base64
-    const reader = new FileReader();
-    reader.onloadend = function () {
-  const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
-  console.log('Base64 Image:', base64Image); // Log base64 gambar
-  
-  const apiUrl = "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage/uploadgambar"; // Ganti dengan endpoint API yang benar
-  
-  fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      body: base64Image // Mengirimkan base64 dari gambar ke Lambda
+    const apiUrl = "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage/uploadgambar"; // Ganti dengan endpoint API yang benar
+    
+    // Mengirim gambar ke API Gateway
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        body: base64Image, // Mengirimkan base64 dari gambar ke Lambda
+        isBase64Encoded: true
+      })
     })
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('API Response:', data); // Log respons dari API
-    if (data && data.file_url) {
-      alert('Gambar berhasil diupload. URL: ' + data.file_url);
-    } else {
-      alert('Gagal mengupload gambar');
-    }
-  })
-  .catch(error => {
-    console.error('Error uploading image:', error);
-    alert('Terjadi kesalahan saat mengupload gambar');
-  });
-};
+    .then(response => response.json())
+    .then(data => {
+      console.log('API Response:', data); // Log respons dari API
+      if (data && data.file_url) {
+        alert('Gambar berhasil diupload. URL: ' + data.file_url);
+      } else {
+        alert('Gagal mengupload gambar');
+      }
+    })
+    .catch(error => {
+      console.error('Error uploading image:', error);
+      alert('Terjadi kesalahan saat mengupload gambar');
+    });
+  };
 
-  });
-
+  reader.readAsDataURL(file); // Mengonversi file gambar ke base64
+});
   // Bagian tidak digunakan untuk saat ini, tetapi disimpan sebagai referensi
   // - Menangani gambar hasil proses API secara lebih kompleks
   // - Tambahkan validasi tambahan jika diperlukan
