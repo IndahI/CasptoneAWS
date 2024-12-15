@@ -377,38 +377,36 @@ endblock %} {% block content %}
     const imageInput = document.getElementById("image");
     const file = imageInput.files[0];
 
-    // Validasi jika tidak ada file dipilih
     if (!file) {
-      alert("Silakan pilih file sebelum mengunggah.");
-      return;
+        alert("Silakan pilih file sebelum mengunggah.");
+        return;
     }
 
-    const apiUrl =
-      "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage/upload"; // Ganti dengan URL API Gateway Anda
+    const apiUrl = "https://r3dzdn4yig.execute-api.us-east-1.amazonaws.com/testStage/upload";
     const formData = new FormData();
     formData.append("image", file);
 
     try {
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        body: formData,
-      });
+        const response = await fetch(apiUrl, {
+            method: "POST",
+            body: formData,
+        });
 
-      if (response.ok) {
-        const result = await response.json();
-        // Redirect ke halaman hasil dengan data dari API
-        window.location.href = `detection-2.html?result_image_url=${encodeURIComponent(
-          result.result_image_url
-        )}&message=${encodeURIComponent(result.message)}`;
-      } else {
-        const errorData = await response.json();
-        alert("Gagal mengunggah: " + (errorData.message || response.statusText));
-      }
+        if (response.ok) {
+            const result = await response.json();
+            const imageElement = document.createElement("img");
+            imageElement.src = `data:image/jpeg;base64,${result.result_image_base64}`;
+            document.body.appendChild(imageElement);
+        } else {
+            const errorData = await response.json();
+            alert("Gagal mengunggah: " + (errorData.message || response.statusText));
+        }
     } catch (error) {
-      console.error("Error:", error);
-      alert("Terjadi kesalahan: " + error.message);
+        console.error("Error:", error);
+        alert("Terjadi kesalahan: " + error.message);
     }
-  });
+});
+
 </script>
 
 {% endblock %}
