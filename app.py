@@ -213,9 +213,10 @@ def logout():
     flash('Logged out successfully!', 'success')
     return redirect(url_for('index'))
 
-@app.route('/detection', )
+@app.route('/detection')
+def detection():
     return render_template('detection-1.html')
-
+    
 @app.route('/detection/result')
 def detection_result():
     #Cek apakah pengguna sudah login
