@@ -332,7 +332,7 @@
     <div class="text-content">
       <h1>Contact</h1>
       <p>Sebelum memulai lebih jauh yuk berikan kami saran</p>
-      <form action="mailto:annisanurqoriah12@gmail.com" method="POST" enctype="text/plain">
+      <form method="POST" action="{{ url_for('contact') }}">
         <div class="form-group">
           <label for="name" class="form-label">Nama:</label>
           <input type="text" class="form-control" name="name" placeholder="Nama" required />
