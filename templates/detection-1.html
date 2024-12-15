@@ -412,79 +412,84 @@ endblock %} {% block content %}
 // });
 
   // Menangani file input dan menampilkan preview gambar
-  document.getElementById("image").addEventListener("change", function () {
-    const file = this.files[0]; // Ambil file yang diunggah
+document.getElementById("image").addEventListener("change", function () {
+  const file = this.files[0]; // Ambil file yang diunggah
 
-    // Validasi apakah file dipilih
-    if (!file) {
-      document.getElementById("file-name").textContent = "Belum ada file yang dipilih";
-      document.getElementById("file-name").style.display = "block";
-      return;
-    }
-
-    // Validasi apakah file adalah gambar
-    if (!file.type.startsWith("image/")) {
-      alert("Silakan pilih file gambar yang valid.");
-      return;
-    }
-
-    // Tampilkan nama file
-    document.getElementById("file-name").textContent = file.name;
+  // Validasi apakah file dipilih
+  if (!file) {
+    document.getElementById("file-name").textContent = "Belum ada file yang dipilih";
     document.getElementById("file-name").style.display = "block";
-
-    // Membaca file dengan FileReader
-    const reader = new FileReader();
-    reader.onload = function (e) {
-      const previewImage = document.getElementById("previewImage");
-      previewImage.src = e.target.result; // Mengatur src gambar ke hasil FileReader
-      previewImage.style.display = "block"; // Menampilkan gambar
-    };
-    reader.onerror = function () {
-      alert("Gagal membaca file. Silakan coba lagi.");
-    };
-
-    reader.readAsDataURL(file); // Membaca file sebagai URL data
-  });
-  function uploadImage() {
-    const fileInput = document.getElementById('imageInput');
-    const file = fileInput.files[0];
-
-    if (!file) {
-      alert('Please select an image file');
-      return;
-    }
-
-    // Membaca file gambar dan mengkonversi ke binary data
-    const reader = new FileReader();
-    reader.onloadend = function () {
-      const imageBinary = reader.result.split(',')[1]; // Mengambil data biner dari base64
-
-      // Mengirim data ke API
-      const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
-
-      fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/png', // Tipe konten untuk PNG
-        },
-        body: Uint8Array.from(atob(imageBinary), c => c.charCodeAt(0)) // Mengonversi base64 menjadi binary
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data && data.file_url) {
-          alert('Gambar berhasil diupload. URL: ' + data.file_url);
-        } else {
-          alert('Gagal mengupload gambar');
-        }
-      })
-      .catch(error => {
-        console.error('Error uploading image:', error);
-        alert('Terjadi kesalahan saat mengupload gambar');
-      });
-    };
-
-    reader.readAsDataURL(file); // Membaca file gambar sebagai base64
+    return;
   }
+
+  // Validasi apakah file adalah gambar
+  if (!file.type.startsWith("image/")) {
+    alert("Silakan pilih file gambar yang valid.");
+    return;
+  }
+
+  // Tampilkan nama file
+  document.getElementById("file-name").textContent = file.name;
+  document.getElementById("file-name").style.display = "block";
+
+  // Membaca file dengan FileReader
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const previewImage = document.getElementById("previewImage");
+    previewImage.src = e.target.result; // Mengatur src gambar ke hasil FileReader
+    previewImage.style.display = "block"; // Menampilkan gambar
+  };
+  reader.onerror = function () {
+    alert("Gagal membaca file. Silakan coba lagi.");
+  };
+
+  reader.readAsDataURL(file); // Membaca file sebagai URL data
+});
+
+// Fungsi untuk mengupload gambar ke Lambda
+function uploadImage() {
+  const fileInput = document.getElementById('image'); // Ganti dengan ID input file yang sesuai
+  const file = fileInput.files[0];
+
+  if (!file) {
+    alert('Please select an image file');
+    return;
+  }
+
+  // Membaca file gambar dan mengkonversi ke base64
+  const reader = new FileReader();
+  reader.onloadend = function () {
+    const base64Image = reader.result.split(',')[1]; // Mengambil data biner dari base64
+
+    const apiUrl = "https://api.melanomascan.my.id/uploadgambar"; // Ganti dengan endpoint API yang benar
+
+    // Mengirim data ke API Gateway
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        body: base64Image // Mengirimkan base64 dari gambar ke Lambda
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data && data.file_url) {
+        alert('Gambar berhasil diupload. URL: ' + data.file_url);
+      } else {
+        alert('Gagal mengupload gambar');
+      }
+    })
+    .catch(error => {
+      console.error('Error uploading image:', error);
+      alert('Terjadi kesalahan saat mengupload gambar');
+    });
+  };
+
+  reader.readAsDataURL(file); // Membaca file gambar sebagai base64
+}
+
   // Bagian tidak digunakan untuk saat ini, tetapi disimpan sebagai referensi
   // - Menangani gambar hasil proses API secara lebih kompleks
   // - Tambahkan validasi tambahan jika diperlukan
