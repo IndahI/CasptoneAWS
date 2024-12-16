@@ -123,11 +123,14 @@ def login():
             # Jika username ditemukan, ambil email dan password yang tersimpan
             stored_email = items[0]['email']
             stored_password = items[0]['password']
+            stored_username = items[0]['username']
             print(stored_password)  # Hapus ini di produksi untuk keamanan
             
             # Validasi password
             if password == stored_password:
-                return redirect(url_for('index', name=username))  # Redirect dengan username
+                session['username'] = username
+                session['email'] = stored_email
+                return redirect(url_for('index'))  # Redirect dengan username
             
         # Jika login gagal
         return render_template("login.html", error="Username atau password salah.")
