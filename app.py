@@ -329,7 +329,7 @@ def detection():
     modal_open = False
 
     if request.method == 'POST':
-        # Periksa batas unggahan untuk tamu atau pengguna
+        # Check upload limits for guest or user
         if not user_logged_in:
             if not check_and_update_access('guest', 'upload'):
                 flash('Please login or register to upload more images.', 'warning')
@@ -339,7 +339,7 @@ def detection():
                 update_guest_usage(guest_uploads, _)
         else:
             if not check_and_update_access(session.get('username'), 'upload'):
-                flash('Anda Telah Mencapai batas unggahan.', 'warning')
+                flash('You have reached your upload limit.', 'warning')
                 modal_open = True
 
         if modal_open:
@@ -350,12 +350,12 @@ def detection():
                 guest_uploads=guest_uploads
             )
 
-        # Proses unggahan gambar
+        # Process uploaded image
         image = request.files['image']
         if image:
             filename = secure_filename(image.filename)
             try:
-                # Unggah file ke S3
+                # Upload file to S3
                 s3_client.upload_fileobj(
                     image,
                     S3_BUCKET,
@@ -363,7 +363,7 @@ def detection():
                 )
                 image_url = f'{S3_LOCATION}{filename}'
 
-                # Simpan detail unggahan ke tabel DynamoDB `upload`
+                # Save upload details to DynamoDB table `upload`
                 upload_table = dynamodb.Table('upload')
                 upload_data = {
                     'username': session.get('username', 'guest'),
@@ -375,10 +375,10 @@ def detection():
 
                 session['uploaded_image'] = filename
 
-                flash('Gambar berhasil diunggah', 'success')
-                return redirect(url_for('detection_result', user_logged_in=user_logged_in,filename=filename))
+                flash('Image uploaded successfully', 'success')
+                return redirect(url_for('detection_result', filename=filename, user_logged_in=user_logged_in))
             except NoCredentialsError:
-                flash('Kredensial tidak tersedia.', 'danger')
+                flash('Credentials not available.', 'danger')
 
     return render_template(
         'detection-1.html',
@@ -388,18 +388,23 @@ def detection():
     )
 
 @app.route('/detection/result/<filename>')
-def detection_result():
-    #Cek apakah pengguna sudah login
-    user_logged_in = 'user_id' in session
-    
-    # Construct the S3 URL directly using the filename
+def detection_result(filename):
+    # Get user_logged_in status from query parameters (default to False)
+    user_logged_in = request.args.get('user_logged_in', 'False') == 'True'
+
+    # Construct the S3 URL using the filename
     uploaded_image = f'{S3_LOCATION}{filename}'
 
     if not uploaded_image:
         flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
 
-    return render_template('detection-2.html', uploaded_image=uploaded_image, user_logged_in=user_logged_in)
+    return render_template(
+        'detection-2.html',
+        uploaded_image=uploaded_image,
+        user_logged_in=user_logged_in
+    )
+
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
 def delete_image(filename):
