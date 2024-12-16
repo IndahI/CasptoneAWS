@@ -329,7 +329,7 @@ def detection():
     modal_open = False
 
     if request.method == 'POST':
-        # Check upload limits for guest or user
+        # Check upload limits
         if not user_logged_in:
             if not check_and_update_access('guest', 'upload'):
                 flash('Please login or register to upload more images.', 'warning')
@@ -350,33 +350,34 @@ def detection():
                 guest_uploads=guest_uploads
             )
 
-        # Process uploaded image
+        # Process the uploaded image
         image = request.files['image']
         if image:
-            filename = secure_filename(image.filename)
+            original_filename = secure_filename(image.filename)
+            # Generate the S3-compatible filename
+            s3_filename = f"s3://{S3_BUCKET}/{original_filename}"
             try:
-                # Upload file to S3
+                # Upload the file to S3
                 s3_client.upload_fileobj(
                     image,
                     S3_BUCKET,
-                    filename,
+                    original_filename,
                 )
-                image_url = f'{S3_LOCATION}{filename}'
+                # Update session with S3 URL
+                session['uploaded_image'] = s3_filename
 
-                # Save upload details to DynamoDB table `upload`
+                # Save upload details to DynamoDB
                 upload_table = dynamodb.Table('upload')
                 upload_data = {
                     'username': session.get('username', 'guest'),
                     'upload_time': int(time.time()),
-                    'filename': filename,
-                    'url': image_url
+                    'filename': original_filename,
+                    'url': s3_filename
                 }
                 upload_table.put_item(Item=upload_data)
 
-                session['uploaded_image'] = filename
-
                 flash('Image uploaded successfully', 'success')
-                return redirect(url_for('detection_result', filename=filename, user_logged_in=user_logged_in))
+                return redirect(url_for('detection_result', filename=original_filename, user_logged_in=user_logged_in))
             except NoCredentialsError:
                 flash('Credentials not available.', 'danger')
 
@@ -387,23 +388,19 @@ def detection():
         guest_uploads=guest_uploads
     )
 
+
 @app.route('/detection/result/<filename>')
 def detection_result(filename):
-    # Get user_logged_in status from query parameters (default to False)
-    user_logged_in = request.args.get('user_logged_in', 'False') == 'True'
-
-    # Construct the S3 URL using the filename
-    uploaded_image = f'{S3_LOCATION}{filename}'
+    user_logged_in = 'username' in session
+    
+    # Construct the S3 URL for the uploaded image
+    uploaded_image = f"s3://{S3_BUCKET}/{filename}"
 
     if not uploaded_image:
         flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
 
-    return render_template(
-        'detection-2.html',
-        uploaded_image=uploaded_image,
-        user_logged_in=user_logged_in
-    )
+    return render_template('detection-2.html', uploaded_image=uploaded_image, user_logged_in=user_logged_in)
 
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
