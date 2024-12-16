@@ -33,7 +33,8 @@ bedrock_client = boto3.client(
 S3_BUCKET = 'upload-images-bucket-detection'
 S3_LOCATION = f'http://{S3_BUCKET}.s3.amazonaws.com/'
 
-s3_client = boto3.client('s3')
+# Correct the region_name parameter
+s3_client = boto3.client('s3', region_name='us-east-1')
 
 # Function to get response from Bedrock
 def get_bedrock_response(prompt):
