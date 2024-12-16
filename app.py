@@ -7,6 +7,8 @@ import os
 import json
 import boto3
 import uuid
+from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whitebrim'
@@ -19,6 +21,37 @@ app.config.from_object('config.Config')
 # uploads_collection = db['uploads']
 # guest_usage_collection = db['guest_usage']
 
+#setting Bedrock
+os.environ["AWS_PROFILE"] = "Kevin"
+
+bedrock_client = boto3.client(
+    service_name="bedrock-runtime",
+    region_name="us-east-1"
+)
+
+#setting S3
+S3_BUCKET = 'upload-images-bucket-detection'
+S3_LOCATION = f'http://{S3_BUCKET}.s3.amazonaws.com/'
+
+# Function to get response from Bedrock
+def get_bedrock_response(prompt):
+    try:
+        response = bedrock_client.invoke_model(
+            modelId='anthropic.claude-v2',  # Gunakan model yang benar
+            contentType='application/json',  # Pengaturan content-type
+            accept='application/json',
+            body=json.dumps({
+                "prompt": prompt,
+                "max_tokens_to_sample": 1000,
+                "temperature": 0.9
+            })
+        )
+        response_body = response['body'].read().decode('utf-8')
+        return json.loads(response_body).get('completion', "Tidak ada jawaban yang diterima.")
+    except Exception as e:
+        print("Error details:", str(e))  # Log error
+        return "Terjadi kesalahan saat mengakses model AI."
+    
 
 dynamodb = boto3.resource('dynamodb',region_name='us-east-1')
 
@@ -54,11 +87,11 @@ def register():
         
         table.put_item(
                 Item={
-        'email': email,
-        'username': username,
-        'password': password
-            }
-        )
+                    'email': email,
+                    'username': username,
+                    'password': password
+                }
+            )
         msg = "Registration Complete. Please Login to your account !"
     
         return redirect (url_for('login'))
@@ -102,20 +135,31 @@ def login():
 def home():
     return render_template('index.html')
 
-
-
 def get_guest_usage():
-    guest_usage = guest_usage_collection.find_one({'_id': 'guest_usage'})
-    if guest_usage:
-        return guest_usage.get('uploads', 0), guest_usage.get('chatbot_interactions', 0)
-    return 0, 0
+    table = dynamodb.Table('guest_usage')  # Tabel DynamoDB untuk menyimpan data guest usage
+    try:
+        response = table.get_item(Key={'_id': 'guest_usage'})  # Ambil item dengan _id = 'guest_usage'
+        item = response.get('Item', {})
+        uploads = item.get('uploads', 0)  # Jumlah upload
+        interactions = item.get('chatbot_interactions', 0)  # Jumlah interaksi chatbot
+        return uploads, interactions
+    except Exception as e:
+        print(f"Error getting guest usage: {e}")
+        return 0, 0  # Default jika data tidak ditemukan atau ada error
 
 def update_guest_usage(uploads, interactions):
-    guest_usage_collection.update_one(
-        {'_id': 'guest_usage'},
-        {'$set': {'uploads': uploads, 'chatbot_interactions': interactions}},
-        upsert=True
-    )
+    table = dynamodb.Table('guest_usage')  # Tabel DynamoDB untuk menyimpan data guest usage
+    try:
+        table.put_item(
+            Item={
+                '_id': 'guest_usage',  # ID tetap untuk data tamu
+                'uploads': uploads,  # Jumlah upload
+                'chatbot_interactions': interactions  # Jumlah interaksi chatbot
+            }
+        )
+    except Exception as e:
+        print(f"Error updating guest usage: {e}")
+
 
 #Helper 
 def get_guest_uploads_count():
@@ -131,6 +175,33 @@ def load_chatbot_data():
 
 #ngambil data dari json
 chatbot_data = load_chatbot_data()
+
+
+def check_and_update_access(user_id, feature):
+    response = user_access_table.get_item(Key={'username': user_id})
+    if 'Item' in response:
+        access_info = response['Item']
+    else:
+        access_info = {'username': user_id, 'chatbot_access' : 0, 'detection_access' : 0}
+    
+    if feature=='chatbot':
+        if access_info['chatbot_access'] >= 3:
+            return False
+        access_info['chatbot_access'] +=1
+    elif feature=='detection' :
+        if access_info['detection_access'] >= 3:
+            return False
+        access_info['detection_access'] +=1
+
+    user_access_table.put_item(Item=access_info)
+    return True
+
+def get_answer(question, data):
+    for item in data["data"]:
+        if item['question'].lower() == question.lower():
+            return item["answer"]
+    return "I'm Sorry, I dont't understand that question."
+
 
 @app.route('/contact', methods=['GET', 'POST'])
 def contact():
@@ -174,27 +245,59 @@ def contact():
         return redirect(url_for('contact'))
 
     return render_template('contact.html', user_logged_in=user_logged_in, username=username)
+
 @app.route('/chatbot', methods=['GET', 'POST'])
 def chatbot():
-    user_logged_in = 'user_id' in session
-    guest_uploads, guest_chatbot_interactions = get_guest_usage()
+    # user_logged_in = 'user_id' in session  # Cek apakah user login
+    # user_id = session.get('user_id', 'guest')  # Default user_id untuk tamu
+    # guest_uploads, guest_chatbot_interactions = get_guest_usage()  # Ambil batasan tamu
+
+    if 'username' in session : 
+        username =session['username']
+        access_granted = True
+    else :
+        if 'guest_id' not in session:
+            session['guest_id'] = str(uuid.uuid4())
+        username =session['guest_id']
+        access_granted = check_and_update_access(username, 'chatbot')
+    
+    if not access_granted : 
+        if request.method == 'POST':
+            return jsonify({"message": "Anda telah mencapai batas penggunaan. Silakan login untuk melanjutkan.", "redirect":url_for('login')}), 403
     
     if request.method == 'POST':
-        if not user_logged_in and guest_chatbot_interactions >= 3:
-            return jsonify({'error': 'Anda telah mencapai batas penggunaan Chatbot. Silakan masuk atau daftar untuk menggunakannya lebih lanjut.'}), 403
+        # Cek batas interaksi chatbot untuk tamu
+        # if not user_logged_in and guest_chatbot_interactions >= 3:
+        #     flash('Anda telah mencapai batas penggunaan chatbot. Silakan login untuk melanjutkan.', 'warning')
+        #     return redirect(url_for('login'))
 
+        # Ambil pesan pengguna dari form
         user_message = request.form['message'].strip()
         if user_message:
+            # Cari respons chatbot
             response = chatbot_data.get(user_message.lower(), "Bot tidak mengerti pertanyaan Anda.")
             
-            if not user_logged_in:
-                guest_chatbot_interactions += 1
-                update_guest_usage(guest_uploads, guest_chatbot_interactions)
-            
+            # Simpan log interaksi ke tabel DynamoDB
+            chatbot_table = dynamodb.Table('chatbot')
+            chatbot_table.put_item(
+                Item={
+                    'chatId': str(uuid.uuid4()),  # ID unik untuk setiap log
+                    'userId': username,           # ID pengguna (guest jika tamu)
+                    'message': user_message,     # Pesan pengguna
+                    'response': response,        # Respons chatbot
+                    'timestamp': int(time.time())  # Waktu interaksi dalam detik
+                }
+            )
+
+            # Tambahkan interaksi ke tamu jika belum login
+            # if not user_logged_in:
+            #     guest_chatbot_interactions += 1
+            #     update_guest_usage(guest_uploads, guest_chatbot_interactions)
+
+            # Kembalikan respons chatbot
             return jsonify({'response': response})
-
-    return render_template('chatbot.html', user_logged_in=user_logged_in)
-
+    # Render halaman chatbot
+    return render_template('chatbot.html', username=username)
 
 @app.route('/get_response/<message>')
 def get_response(message):
@@ -214,16 +317,79 @@ def logout():
     flash('Logged out successfully!', 'success')
     return redirect(url_for('index'))
 
-@app.route('/detection')
+@app.route('/detection', methods=['GET', 'POST'])
 def detection():
-    return render_template('detection-1.html')
+    user_logged_in = 'username' in session
+    guest_uploads, _ = get_guest_usage()
+    modal_open = False
 
-@app.route('/detection/result')
+    if request.method == 'POST':
+        # Periksa batas unggahan untuk tamu atau pengguna
+        if not user_logged_in:
+            if not check_and_update_access('guest', 'upload'):
+                flash('Please login or register to upload more images.', 'warning')
+                modal_open = True
+            else:
+                guest_uploads += 1
+                update_guest_usage(guest_uploads, _)
+        else:
+            if not check_and_update_access(session.get('username'), 'upload'):
+                flash('Anda Telah Mencapai batas unggahan.', 'warning')
+                modal_open = True
+
+        if modal_open:
+            return render_template(
+                'detection-1.html',
+                user_logged_in=user_logged_in,
+                modal_open=modal_open,
+                guest_uploads=guest_uploads
+            )
+
+        # Proses unggahan gambar
+        image = request.files['image']
+        if image:
+            filename = secure_filename(image.filename)
+            try:
+                # Unggah file ke S3
+                s3_client.upload_fileobj(
+                    image,
+                    S3_BUCKET,
+                    filename,
+                )
+                image_url = f'{S3_LOCATION}{filename}'
+
+                # Simpan detail unggahan ke tabel DynamoDB `upload`
+                upload_table = dynamodb.Table('upload')
+                upload_data = {
+                    'username': session.get('username', 'guest'),
+                    'upload_time': int(time.time()),
+                    'filename': filename,
+                    'url': image_url
+                }
+                upload_table.put_item(Item=upload_data)
+
+                session['uploaded_image'] = filename
+
+                flash('Gambar berhasil diunggah', 'success')
+                return redirect(url_for('detection_result', user_logged_in=user_logged_in,filename=filename))
+            except NoCredentialsError:
+                flash('Kredensial tidak tersedia.', 'danger')
+
+    return render_template(
+        'detection-1.html',
+        user_logged_in=user_logged_in,
+        modal_open=modal_open,
+        guest_uploads=guest_uploads
+    )
+
+@app.route('/detection/result/<filename>')
 def detection_result():
     #Cek apakah pengguna sudah login
     user_logged_in = 'user_id' in session
     
-    uploaded_image = session.get('uploaded_image')
+    # Construct the S3 URL directly using the filename
+    uploaded_image = f'{S3_LOCATION}{filename}'
+
     if not uploaded_image:
         flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
