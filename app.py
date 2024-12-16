@@ -33,6 +33,8 @@ bedrock_client = boto3.client(
 S3_BUCKET = 'upload-images-bucket-detection'
 S3_LOCATION = f'http://{S3_BUCKET}.s3.amazonaws.com/'
 
+s3_client = boto3.client('s3')
+
 # Function to get response from Bedrock
 def get_bedrock_response(prompt):
     try:
@@ -54,6 +56,8 @@ def get_bedrock_response(prompt):
     
 
 dynamodb = boto3.resource('dynamodb',region_name='us-east-1')
+user_access_table = dynamodb.Table('user_access')
+uploads_colletion = dynamodb.Table('uploads')
 
 @app.route('/')
 def index():
