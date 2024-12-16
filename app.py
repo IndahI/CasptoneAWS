@@ -257,56 +257,26 @@ def contact():
 
 @app.route('/chatbot', methods=['GET', 'POST'])
 def chatbot():
-    # user_logged_in = 'user_id' in session  # Cek apakah user login
-    # user_id = session.get('user_id', 'guest')  # Default user_id untuk tamu
-    # guest_uploads, guest_chatbot_interactions = get_guest_usage()  # Ambil batasan tamu
-
-    if 'username' in session : 
-        username =session['username']
-        access_granted = True
-    else :
-        if 'guest_id' not in session:
-            session['guest_id'] = str(uuid.uuid4())
-        username =session['guest_id']
-        access_granted = check_and_update_access(username, 'chatbot')
-    
-    if not access_granted : 
-        if request.method == 'POST':
-            return jsonify({"message": "Anda telah mencapai batas penggunaan. Silakan login untuk melanjutkan.", "redirect":url_for('login')}), 403
-    
+    user_logged_in = 'user_id' in session
+    guest_uploads, guest_chatbot_interactions = get_guest_usage()
+   
     if request.method == 'POST':
-        # Cek batas interaksi chatbot untuk tamu
-        # if not user_logged_in and guest_chatbot_interactions >= 3:
-        #     flash('Anda telah mencapai batas penggunaan chatbot. Silakan login untuk melanjutkan.', 'warning')
-        #     return redirect(url_for('login'))
+        if not user_logged_in and guest_chatbot_interactions >= 3:
+            return jsonify({'error': 'You have reached the usage limit for the Chatbot. Please log in or register to continue.'}), 403
 
-        # Ambil pesan pengguna dari form
         user_message = request.form['message'].strip()
         if user_message:
-            # Cari respons chatbot
-            response = chatbot_data.get(user_message.lower(), "Bot tidak mengerti pertanyaan Anda.")
+            # Get response from Bedrock
+            response = get_bedrock_response(user_message)
+
+            if not user_logged_in:
+                guest_chatbot_interactions += 1
+                update_guest_usage(guest_uploads, guest_chatbot_interactions)
             
-            # Simpan log interaksi ke tabel DynamoDB
-            chatbot_table = dynamodb.Table('chatbot')
-            chatbot_table.put_item(
-                Item={
-                    'chatId': str(uuid.uuid4()),  # ID unik untuk setiap log
-                    'userId': username,           # ID pengguna (guest jika tamu)
-                    'message': user_message,     # Pesan pengguna
-                    'response': response,        # Respons chatbot
-                    'timestamp': int(time.time())  # Waktu interaksi dalam detik
-                }
-            )
-
-            # Tambahkan interaksi ke tamu jika belum login
-            # if not user_logged_in:
-            #     guest_chatbot_interactions += 1
-            #     update_guest_usage(guest_uploads, guest_chatbot_interactions)
-
-            # Kembalikan respons chatbot
             return jsonify({'response': response})
-    # Render halaman chatbot
-    return render_template('chatbot.html', username=username)
+
+    return render_template('chatbot.html', user_logged_in=user_logged_in)
+ 
 
 @app.route('/get_response/<message>')
 def get_response(message):
