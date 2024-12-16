@@ -22,7 +22,7 @@ app.config.from_object('config.Config')
 # guest_usage_collection = db['guest_usage']
 
 #setting Bedrock
-os.environ["AWS_PROFILE"] = "Kevin"
+os.environ["AWS_PROFILE"] = "Indah"
 
 bedrock_client = boto3.client(
     service_name="bedrock-runtime",
