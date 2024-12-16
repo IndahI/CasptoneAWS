@@ -138,7 +138,8 @@ def login():
 
 @app.route('/index')
 def home():
-    return render_template('index.html')
+    username=session.get("username")
+    return render_template("index.html", username=username)
 
 def get_guest_usage():
     table = dynamodb.Table('guest_usage')  # Tabel DynamoDB untuk menyimpan data guest usage
