@@ -136,13 +136,13 @@
   document.getElementById("scan-form").addEventListener("submit", function (event) {
     event.preventDefault();
 
-    const filename = document.querySelector('input[name="filename"]').value;
+    const filename ='Melanoma_7.jpg';
 
-    const apiUrl = `https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename=${filename}`;
+    const apiUrl = `https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename=Melanoma_7.jpg`;
     fetch(apiUrl)
       .then(response => response.json())
       .then(data => {
-        window.location.href = `/detection/result/analyze/${filename}`;
+        window.location.href = `/detection/result/analyze/Melanoma_7.jpg`;
       })
       .catch(error => {
         alert("Error: " + error.message);
