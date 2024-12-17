@@ -16,6 +16,7 @@ MelanomaScan is an advanced web application that combines AI-powered melanoma de
 - Real-time typing animation for responses
 - Markdown formatting support for better readability
 - Interactive features (like, dislike, copy responses)
+- Beautiful alert design for better user experience
 
 ### User Management
 - **Registered Users**
@@ -32,7 +33,7 @@ MelanomaScan is an advanced web application that combines AI-powered melanoma de
 
 ### Backend
 - **Framework**: Flask (Python)
-- **Database**: SQLite
+- **Database**: SQLite/MongoDB (configurable)
 - **AI Services**: Google Gemini AI
 - **Security**: Werkzeug security functions
 - **File Handling**: Werkzeug utilities
@@ -50,6 +51,7 @@ MelanomaScan is an advanced web application that combines AI-powered melanoma de
 - Google Gemini API key
 - Modern web browser
 - Internet connection for AI features
+- MongoDB (optional)
 
 ## Installation
 
@@ -71,9 +73,12 @@ MelanomaScan is an advanced web application that combines AI-powered melanoma de
    ```
 
 4. **Configure Environment**
-   Create a `.env` file:
+   Copy `.env.example` to `.env` and configure:
    ```env
    GEMINI_API_KEY=your_api_key_here
+   UPLOAD_FOLDER=path/to/uploads
+   DB_TYPE=sqlite  # or mongodb
+   MONGO_URI=your_mongodb_uri  # if using MongoDB
    ```
 
 5. **Initialize Database**
@@ -89,6 +94,7 @@ melanoma-scan/
 ├── app.py              # Main application file
 ├── config.py           # Configuration settings
 ├── requirements.txt    # Python dependencies
+├── .env.example       # Environment variables template
 ├── static/            
 │   ├── css/           # Stylesheets
 │   ├── js/            # JavaScript files
@@ -99,7 +105,7 @@ melanoma-scan/
 │   ├── chatbot.html   # AI chat interface
 │   └── ...
 ├── uploads/           # User uploaded images
-└── database.db        # SQLite database
+└── database.db        # SQLite database (if using SQLite)
 ```
 
 ## Database Schema
