@@ -83,6 +83,41 @@ def index():
     return render_template('index.html', user_logged_in=user_logged_in, username=username)
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        # Ambil input dari form
+        username = request.form['username']  # Input username dari form
+        password = request.form['password']  # Input password dari form
+
+        # Akses tabel DynamoDB
+        table = dynamodb.Table('user')
+
+        # Cari email berdasarkan username menggunakan scan
+        response = table.scan(
+            FilterExpression=Key('username').eq(username)  # Filter berdasarkan username
+        )
+        items = response.get('Items', [])
+
+        if items:
+            # Jika username ditemukan, ambil email dan password yang tersimpan
+            stored_email = items[0]['email']
+            stored_password = items[0]['password']
+            stored_username = items[0]['username']
+            print(stored_password)  # Hapus ini di produksi untuk keamanan
+
+            # Validasi password
+            if password == stored_password:
+                session['username'] = username
+                session['email'] = stored_email
+                return redirect(url_for('index'))  # Redirect dengan username
+
+        # Jika login gagal
+        return render_template("login.html", error="Username atau password salah.")
+
+    # Jika request GET, tampilkan halaman login
+    return render_template("login.html")
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -103,43 +138,6 @@ def register():
     
         return redirect (url_for('login'))
     return render_template('register.html')
-
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        # Ambil input dari form
-        username = request.form['username']  # Input username dari form
-        password = request.form['password']  # Input password dari form
-
-        # Akses tabel DynamoDB
-        table = dynamodb.Table('user')
-        
-        # Cari email berdasarkan username menggunakan scan
-        response = table.scan(
-            FilterExpression=Key('username').eq(username)  # Filter berdasarkan username
-        )
-        items = response.get('Items', [])
-        
-        if items:
-            # Jika username ditemukan, ambil email dan password yang tersimpan
-            stored_email = items[0]['email']
-            stored_password = items[0]['password']
-            stored_username = items[0]['username']
-            print(stored_password)  # Hapus ini di produksi untuk keamanan
-            
-            # Validasi password
-            if password == stored_password:
-                session['username'] = username
-                session['email'] = stored_email
-                return redirect(url_for('index'))  # Redirect dengan username
-            
-        # Jika login gagal
-        return render_template("login.html", error="Username atau password salah.")
-    
-    # Jika request GET, tampilkan halaman login
-    return render_template("login.html")
-
 
 @app.route('/index')
 def home():
