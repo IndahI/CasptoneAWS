@@ -136,18 +136,19 @@
   document.getElementById("scan-form").addEventListener("submit", function (event) {
     event.preventDefault();
 
-    const filename ='Melanoma_7.jpg';
+    const filename = 'Melanoma_7.jpg';  // Replace sesuai kebutuhan
+    const apiUrl = `/proxy/analyze?filename=${filename}`;  // Panggil proxy Flask
 
-    const apiUrl = `https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename=Melanoma_7.jpg`;
     fetch(apiUrl)
-      .then(response => response.json())
-      .then(data => {
-        window.location.href = `/detection/result/analyze/Melanoma_7.jpg`;
-      })
-      .catch(error => {
-        alert("Error: " + error.message);
-      });
-  });
+        .then(response => response.json())
+        .then(data => {
+            console.log('API Response:', data); 
+            window.location.href = `/detection/result/analyze/${filename}`;
+        })
+        .catch(error => {
+            alert("Error: " + error.message);
+        });
+});
 </script>
 
 {% endblock %}

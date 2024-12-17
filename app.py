@@ -10,6 +10,7 @@ import boto3
 import uuid
 from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 import time
+import requests
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whitebrim'
@@ -443,6 +444,17 @@ def delete_image(filename):
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/proxy/analyze', methods=['GET'])
+def proxy_analyze():
+    filename = request.args.get('filename')  # Ambil filename dari query
+    api_url = f"https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename={filename}"
+    
+    try:
+        # Lakukan request ke API eksternal
+        response = requests.get(api_url)
+        return response.json(), response.status_code  # Forward respons API
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run('0.0.0.0', port=5000, debug=True)
