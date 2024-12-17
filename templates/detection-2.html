@@ -136,7 +136,7 @@
   document.getElementById("scan-form").addEventListener("submit", function (event) {
     event.preventDefault();
 
-    const filename = 'Melanoma_7.jpg';  // Replace sesuai kebutuhan
+    const filename = document.querySelector('input[name="filename"]').value;
     const apiUrl = `/proxy/analyze?filename=${filename}`;  // Panggil proxy Flask
 
     fetch(apiUrl)
