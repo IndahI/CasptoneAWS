@@ -4,11 +4,7 @@
 <section class="main-container">
   <div class="main-box">
     <div class="text-content">
-      <h2>Halo, Selamat Datang {{ password }}</h2>
-      <h2>{{ username }}</h2>
-      <a
-        href="https://us-east-1plhbylayb.auth.us-east-1.amazoncognito.com/login?client_id=71r0atc1n4dj2i82mr74ct768j&redirect_uri=https://127.0.0.1:5000/login&response_type=code&scope=email+openid"
-      ></a>
+      <h2>Halo, Selamat Datang{% if username %} {{ username }}{% endif %}</h2>
       <p>
         Tahukah anda bahwa Kanker melanoma merupakan sejenis kanker kulit yang
         agresif dan berasal dari sel pigmen kulit melanosit. Deteksi dini itu

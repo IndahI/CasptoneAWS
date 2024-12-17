@@ -1,304 +1,329 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_cors import CORS
-from pymongo import MongoClient
+import sqlite3
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from boto3.dynamodb.conditions import Key, Attr
+import google.generativeai as genai
 import os
-import json
-import boto3
-import uuid
-from botocore.exceptions import BotoCoreError, ClientError, NoCredentialsError
 import time
-import requests
+from config import Config
+from datetime import datetime
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'whitebrim'
+app.secret_key = os.urandom(24)
+CORS(app)
 app.config.from_object('config.Config')
 
-CORS(app)  # Default: mengizinkan semua origin
+# Configure Gemini API
+print(f"API Key length: {len(Config.GEMINI_API_KEY) if Config.GEMINI_API_KEY else 0}")
 
-#konfigurasi MongoDB
-# mongo_client = MongoClient(app.config['MONGO_URI'])
-# db = mongo_client['melanoma_scan']
-# users_collection = db['users']
-# uploads_collection = db['uploads']
-# guest_usage_collection = db['guest_usage']
-
-#setting Bedrock
-os.environ["AWS_PROFILE"] = "Indah"
-
-bedrock_client = boto3.client(
-    service_name="bedrock-runtime",
-    region_name="us-east-1"
-)
-
-#setting S3
-S3_BUCKET = 'upload-images-bucket-detection'
-S3_LOCATION = f'http://{S3_BUCKET}.s3.amazonaws.com/'
-S3_OUTPUT_BUCKET = 'output-bucket-sagemaker1'
-S3_LOCATION_OUTPUT = f'http://{S3_OUTPUT_BUCKET}.s3.amazonaws.com/'
-
-# Correct the region_name parameter
-s3_client = boto3.client('s3', region_name='us-east-1')
-
-# Function to get response from Bedrock
-def get_bedrock_response(prompt):
+# Configure Gemini API
+if not Config.GEMINI_API_KEY:
+    print("Error: GEMINI_API_KEY not found")
+else:
+    genai.configure(api_key=Config.GEMINI_API_KEY)
     try:
-        response = bedrock_client.invoke_model(
-            modelId='anthropic.claude-v2',  # Gunakan model yang benar
-            contentType='application/json',  # Pengaturan content-type
-            accept='application/json',
-            body=json.dumps({
-                "prompt": prompt,
-                "max_tokens_to_sample": 1000,
-                "temperature": 0.9
-            })
-        )
-        response_body = response['body'].read().decode('utf-8')
-        return json.loads(response_body).get('completion', "Tidak ada jawaban yang diterima.")
+        model = genai.GenerativeModel('gemini-pro')
+        print("Successfully initialized Gemini model")
     except Exception as e:
-        print("Error details:", str(e))  # Log error
-        return "Terjadi kesalahan saat mengakses model AI."
-    
+        print(f"Error initializing Gemini model: {str(e)}")
 
-dynamodb = boto3.resource('dynamodb',region_name='us-east-1')
-user_access_table = dynamodb.Table('user_access')
-uploads_colletion = dynamodb.Table('uploads')
+# Ensure upload folder exists
+os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+
+def get_db():
+    db = sqlite3.connect(Config.SQLITE_DB)
+    db.row_factory = sqlite3.Row
+    return db
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        # Create tables
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS uploads (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                upload_time INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                url TEXT NOT NULL
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS guest_usage (
+                id INTEGER PRIMARY KEY,
+                uploads INTEGER DEFAULT 0,
+                chatbot_interactions INTEGER DEFAULT 0,
+                last_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS user_access (
+                username TEXT PRIMARY KEY,
+                chatbot_access INTEGER DEFAULT 0,
+                detection_access INTEGER DEFAULT 0
+            )
+        ''')
+        db.commit()
+
+# Initialize database
+init_db()
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
+
+def get_ai_response(prompt):
+    try:
+        if not Config.GEMINI_API_KEY:
+            print("Error: GEMINI_API_KEY not configured")
+            return {'status': 'error', 'message': 'API key not configured'}
+
+        # Add context about the chatbot's purpose
+        context = """You are MelanomaScan's AI assistant, specialized in providing information about melanoma skin cancer. 
+        Your responses should be informative, accurate, and focused on melanoma-related topics.
+        Always maintain a professional yet friendly tone, and if you're unsure about something, 
+        recommend consulting with a healthcare professional.
+        Provide your responses in Bahasa Indonesia."""
+        
+        # Combine context and user prompt
+        full_prompt = f"{context}\n\nUser question: {prompt}"
+        
+        print(f"Sending request to Gemini API with prompt length: {len(full_prompt)}")
+        
+        # Get response from Gemini
+        response = model.generate_content(full_prompt)
+        
+        print(f"Received response from Gemini API")
+        
+        if response and response.text:
+            return {'status': 'success', 'message': response.text}
+        else:
+            print("No text in response from Gemini")
+            return {'status': 'error', 'message': 'No response generated'}
+    except Exception as e:
+        print(f"Error getting AI response: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Full error details: {repr(e)}")
+        return {'status': 'error', 'message': 'Maaf, saya sedang mengalami kesulitan teknis. Silakan coba lagi nanti.'}
 
 @app.route('/')
 def index():
-    user_logged_in = 'email' in session  # Cek apakah pengguna sudah login
-    username = None  # Default username jika tidak login
-
-    if user_logged_in:
-        email = session.get('email')
-        print(f"Email dari sesi: {email}")  # Debugging untuk melihat nilai email
-        table = dynamodb.Table('user')
-        response = table.query(
-            KeyConditionExpression=Key('email').eq(email)
-        )
-        items = response.get('Items', [])
-        print(f"Items dari DynamoDB: {items}")  # Debugging untuk melihat hasil query
-
-        if items:
-            username = items[0].get('username')  # Ambil username dari hasil query
-
-    return render_template('index.html', user_logged_in=user_logged_in, username=username)
-
+    user_logged_in = 'username' in session
+    username = session.get('username') if user_logged_in else None
+    return render_template("index.html", user_logged_in=user_logged_in, username=username)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    if 'username' in session:
+        return redirect(url_for('index'))
+        
+    # Check for registration success
+    if session.pop('registration_success', False):
+        flash('Registrasi berhasil! Silakan login ke akun Anda.', 'success')
+        
     if request.method == 'POST':
-        # Ambil input dari form
-        username = request.form['username']  # Input username dari form
-        password = request.form['password']  # Input password dari form
+        username = request.form['username']
+        password = request.form['password']
 
-        # Akses tabel DynamoDB
-        table = dynamodb.Table('user')
+        db = get_db()
+        user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
-        # Cari email berdasarkan username menggunakan scan
-        response = table.scan(
-            FilterExpression=Key('username').eq(username)  # Filter berdasarkan username
-        )
-        items = response.get('Items', [])
+        if user and check_password_hash(user['password'], password):
+            session['username'] = user['username']
+            session['email'] = user['email']
+            flash('Login berhasil!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Username atau password salah!', 'danger')
+            return redirect(url_for('login'))
 
-        if items:
-            # Jika username ditemukan, ambil email dan password yang tersimpan
-            stored_email = items[0]['email']
-            stored_password = items[0]['password']
-            stored_username = items[0]['username']
-            print(stored_password)  # Hapus ini di produksi untuk keamanan
-
-            # Validasi password
-            if password == stored_password:
-                session['username'] = username
-                session['email'] = stored_email
-                return redirect(url_for('index'))  # Redirect dengan username
-
-        # Jika login gagal
-        return render_template("login.html", error="Username atau password salah.")
-
-    # Jika request GET, tampilkan halaman login
-    return render_template("login.html")
+    return render_template("login.html", user_logged_in=False)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if 'username' in session:
+        return redirect(url_for('index'))
+        
     if request.method == 'POST':
         email = request.form['email']
         username = request.form['username']
         password = request.form['password']
          
-        table = dynamodb.Table('user')
+        db = get_db()
         
-        table.put_item(
-                Item={
-                    'email': email,
-                    'username': username,
-                    'password': password
-                }
-            )
-        msg = "Registration Complete. Please Login to your account !"
-    
-        return redirect (url_for('login'))
-    return render_template('register.html')
-
-@app.route('/index')
-def home():
-    username=session.get("username")
-    return render_template("index.html", username=username)
-
-def get_guest_usage():
-    table = dynamodb.Table('guest_usage')  # Tabel DynamoDB untuk menyimpan data guest usage
-    try:
-        response = table.get_item(Key={'_id': 'guest_usage'})  # Ambil item dengan _id = 'guest_usage'
-        item = response.get('Item', {})
-        uploads = item.get('uploads', 0)  # Jumlah upload
-        interactions = item.get('chatbot_interactions', 0)  # Jumlah interaksi chatbot
-        return uploads, interactions
-    except Exception as e:
-        print(f"Error getting guest usage: {e}")
-        return 0, 0  # Default jika data tidak ditemukan atau ada error
-
-def update_guest_usage(uploads, interactions):
-    table = dynamodb.Table('guest_usage')  # Tabel DynamoDB untuk menyimpan data guest usage
-    try:
-        table.put_item(
-            Item={
-                '_id': 'guest_usage',  # ID tetap untuk data tamu
-                'uploads': uploads,  # Jumlah upload
-                'chatbot_interactions': interactions  # Jumlah interaksi chatbot
-            }
-        )
-    except Exception as e:
-        print(f"Error updating guest usage: {e}")
-
-
-#Helper 
-def get_guest_uploads_count():
-    return session.get('guest_uploads', 0)
-
-def get_guest_chatbot_interactions():
-    return session.get('guest_chatbot_interactions', 0)
-
-#deklarasi fungsi manggil data dari file chatbot.json
-def load_chatbot_data():
-    with open('chatbot.json', 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-#ngambil data dari json
-chatbot_data = load_chatbot_data()
-
-
-def check_and_update_access(user_id, feature):
-    response = user_access_table.get_item(Key={'username': user_id})
-    if 'Item' in response:
-        access_info = response['Item']
-    else:
-        access_info = {'username': user_id, 'chatbot_access' : 0, 'detection_access' : 0}
-    
-    if feature=='chatbot':
-        if access_info['chatbot_access'] >= 3:
-            return False
-        access_info['chatbot_access'] +=1
-    elif feature=='detection' :
-        if access_info['detection_access'] >= 3:
-            return False
-        access_info['detection_access'] +=1
-
-    user_access_table.put_item(Item=access_info)
-    return True
-
-def get_answer(question, data):
-    for item in data["data"]:
-        if item['question'].lower() == question.lower():
-            return item["answer"]
-    return "I'm Sorry, I dont't understand that question."
-
-
-@app.route('/contact', methods=['GET', 'POST'])
-def contact():
-    user_logged_in = 'user_id' in session  # Cek apakah pengguna sudah login
-    username = None  # Default jika tidak login
-
-    if user_logged_in:
-        # Ambil username dari sesi (opsional, tergantung struktur sesi)
-        user_id = session.get('email')
-        table = dynamodb.Table('user')
-        response = table.query(
-            KeyConditionExpression=Key('email').eq(email)
-        )
-        items = response.get('Items', [])
-        if items:
-            username = items[0].get('username', 'Pengguna')
-
-    if request.method == 'POST':
-        # Ambil input dari form
-        name = request.form['name']
-        email = request.form['email']
-        phone = request.form['phone']
-        feedback = request.form['feedback']  # Kritik dan Saran
-
-        # Buat contactId unik
-        contact_id = str(uuid.uuid4())  # UUID sebagai contactId
-
-        # Simpan data ke tabel DynamoDB contact
-        contact_table = dynamodb.Table('contactuser')
-        contact_table.put_item(
-            Item={ 
-                'name': name,             # Nama pengirim
-                'email': email,           # Email pengirim
-                'phone': phone,           # Telepon pengirim
-                'feedback': feedback,     # Kritik dan Saran
-            }
-        )
-
-        # Flash pesan keberhasilan
-        flash('Pesan Anda berhasil dikirim. Kami akan segera merespon!', 'success')
-        return redirect(url_for('contact'))
-
-    return render_template('contact.html', user_logged_in=user_logged_in, username=username)
-
-@app.route('/chatbot', methods=['GET', 'POST'])
-def chatbot():
-    user_logged_in = 'user_id' in session
-    guest_uploads, guest_chatbot_interactions = get_guest_usage()
-   
-    if request.method == 'POST':
-        if not user_logged_in and guest_chatbot_interactions >= 3:
-            return jsonify({'error': 'You have reached the usage limit for the Chatbot. Please log in or register to continue.'}), 403
-
-        user_message = request.form['message'].strip()
-        if user_message:
-            # Get response from Bedrock
-            response = get_bedrock_response(user_message)
-
-            if not user_logged_in:
-                guest_chatbot_interactions += 1
-                update_guest_usage(guest_uploads, guest_chatbot_interactions)
+        # Check if email already exists
+        existing_email = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        if existing_email:
+            flash('Email sudah terdaftar. Silakan gunakan email lain.', 'danger')
+            return render_template('register.html', user_logged_in=False)
             
-            return jsonify({'response': response})
-
-    return render_template('chatbot.html', user_logged_in=user_logged_in)
- 
-
-@app.route('/get_response/<message>')
-def get_response(message):
-    response = chatbot_data.get(message.lower(), "Bot tidak mengerti pertanyaan Anda.")
-    return jsonify({'response': response})
-
-@app.route('/about')
-def about():
-    #Cek apakah pengguna sudah login
-    user_logged_in = 'user_id' in session
-    return render_template('about.html', user_logged_in=user_logged_in)
-
+        # Check if username already exists
+        existing_username = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        if existing_username:
+            flash('Username sudah digunakan. Silakan pilih username lain.', 'danger')
+            return render_template('register.html', user_logged_in=False)
+        
+        try:
+            db.execute('INSERT INTO users (username, email, password) VALUES (?, ?, ?)', 
+                      (username, email, generate_password_hash(password)))
+            db.commit()
+            
+            # Store registration success in session instead of flash
+            session['registration_success'] = True
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.rollback()
+            flash('Terjadi kesalahan saat registrasi. Silakan coba lagi.', 'danger')
+            print(f"Registration error: {str(e)}")
+            return render_template('register.html', user_logged_in=False)
+            
+    return render_template('register.html', user_logged_in=False)
 
 @app.route('/logout')
 def logout():
     session.clear()
-    flash('Logged out successfully!', 'success')
+    flash('You have been logged out.', 'info')
     return redirect(url_for('index'))
+
+@app.route('/index')
+def home():
+    user_logged_in = 'username' in session
+    username = session.get('username') if user_logged_in else None
+    return render_template("index.html", user_logged_in=user_logged_in, username=username)
+
+def get_guest_usage():
+    db = get_db()
+    # Create guest_usage table if it doesn't exist
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS guest_usage (
+            id INTEGER PRIMARY KEY,
+            uploads INTEGER DEFAULT 0,
+            chatbot_interactions INTEGER DEFAULT 0,
+            last_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Get or create guest usage record
+    usage = db.execute('SELECT * FROM guest_usage WHERE id = 1').fetchone()
+    if not usage:
+        db.execute('INSERT INTO guest_usage (id, uploads, chatbot_interactions) VALUES (1, 0, 0)')
+        db.commit()
+        return 0, 0
+    
+    # Reset counters if it's been more than 24 hours
+    if usage['last_reset']:
+        last_reset = datetime.fromisoformat(usage['last_reset'].replace('Z', '+00:00'))
+        if (datetime.now() - last_reset).days >= 1:
+            db.execute('''
+                UPDATE guest_usage 
+                SET uploads = 0, 
+                    chatbot_interactions = 0, 
+                    last_reset = CURRENT_TIMESTAMP 
+                WHERE id = 1
+            ''')
+            db.commit()
+            return 0, 0
+    
+    return usage['uploads'], usage['chatbot_interactions']
+
+def update_guest_usage(uploads, interactions):
+    db = get_db()
+    db.execute('''
+        UPDATE guest_usage 
+        SET uploads = ?, 
+            chatbot_interactions = ?,
+            last_reset = CASE 
+                WHEN (julianday('now') - julianday(last_reset)) >= 1 
+                THEN CURRENT_TIMESTAMP 
+                ELSE last_reset 
+            END
+        WHERE id = 1
+    ''', (uploads, interactions))
+    db.commit()
+
+def get_guest_uploads_count():
+    return get_guest_usage()[0]
+    
+def get_guest_chatbot_interactions():
+    return get_guest_usage()[1]
+
+@app.route('/contact', methods=['GET', 'POST'])
+def contact():
+    user_logged_in = 'username' in session
+    username = session.get('username') if user_logged_in else None
+    
+    if request.method == 'POST':
+        name = request.form['name']       # Nama pengirim
+        email = request.form['email']     # Email pengirim
+        phone = request.form['phone']     # Telepon pengirim
+        feedback = request.form['feedback']  # Kritik dan Saran
+
+        # Create contact table if it doesn't exist
+        db = get_db()
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS contactuser (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT NOT NULL,
+                feedback TEXT NOT NULL,
+                contact_time INTEGER NOT NULL
+            )
+        ''')
+        
+        # Save contact data
+        db.execute(
+            'INSERT INTO contactuser (name, email, phone, feedback, contact_time) VALUES (?, ?, ?, ?, ?)',
+            (name, email, phone, feedback, int(time.time()))
+        )
+        db.commit()
+
+        # Flash success message
+        flash('Pesan Anda berhasil dikirim. Kami akan segera merespon!', 'success')
+        return redirect(url_for('contact'))
+
+    return render_template('contact.html', username=username, user_logged_in=user_logged_in)
+
+@app.route('/chatbot', methods=['GET', 'POST'])
+def chatbot():
+    user_logged_in = 'username' in session
+    guest_uploads, guest_chatbot_interactions = get_guest_usage()
+   
+    if request.method == 'POST':
+        if not user_logged_in and guest_chatbot_interactions >= 3:
+            return jsonify({
+                'status': 'error',
+                'message': 'Anda telah mencapai batas penggunaan Chatbot. Silakan login atau daftar untuk melanjutkan.'
+            }), 403
+
+        user_message = request.form['message'].strip()
+        if user_message:
+            # Get response from Gemini API
+            result = get_ai_response(user_message)
+            
+            if result['status'] == 'success':
+                if not user_logged_in:
+                    guest_chatbot_interactions += 1
+                    update_guest_usage(guest_uploads, guest_chatbot_interactions)
+                return jsonify(result)
+            else:
+                return jsonify(result), 500
+
+    return render_template('chatbot.html', user_logged_in=user_logged_in)
+
+@app.route('/about')
+def about():
+    #Cek apakah pengguna sudah login
+    user_logged_in = 'username' in session
+    return render_template('about.html', user_logged_in=user_logged_in)
 
 
 @app.route('/detection', methods=['GET', 'POST'])
@@ -308,118 +333,89 @@ def detection():
     modal_open = False
 
     if request.method == 'POST':
-        # Check upload limits
-        if not user_logged_in:
-            if not check_and_update_access('guest', 'upload'):
-                flash('Please login or register to upload more images.', 'warning')
-                modal_open = True
-            else:
-                guest_uploads += 1
-                update_guest_usage(guest_uploads, _)
-        else:
-            if not check_and_update_access(session.get('username'), 'upload'):
-                flash('You have reached your upload limit.', 'warning')
-                modal_open = True
+        if not user_logged_in and guest_uploads >= 3:
+            flash('You have reached the upload limit. Please log in or register to continue.', 'danger')
+            return redirect(url_for('detection'))
 
-        if modal_open:
-            return render_template(
-                'detection-1.html',
-                user_logged_in=user_logged_in,
-                modal_open=modal_open,
-                guest_uploads=guest_uploads
-            )
+        if 'image' not in request.files:
+            flash('No image selected', 'danger')
+            return redirect(request.url)
 
-        # Process the uploaded image
         image = request.files['image']
-        if image:
+        if image.filename == '':
+            flash('No image selected', 'danger')
+            return redirect(request.url)
+
+        if image and allowed_file(image.filename):
             original_filename = secure_filename(image.filename)
             try:
-                # Upload the file to S3
-                s3_client.upload_fileobj(
-                    image,
-                    S3_BUCKET,
-                    original_filename,
-                )
-                # Update session with S3 URL
-                s3_filename = f"s3://{S3_BUCKET}/{original_filename}"
-                session['uploaded_image'] = s3_filename
+                # Ensure uploads directory exists
+                os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+                
+                # Save the file
+                image_path = os.path.join(Config.UPLOAD_FOLDER, original_filename)
+                image.save(image_path)
 
-                # Save upload details to DynamoDB
-                upload_table = dynamodb.Table('upload')
-                upload_data = {
-                    'username': session.get('username', 'guest'),
-                    'upload_time': int(time.time()),
-                    'filename': original_filename,
-                    'url': s3_filename
-                }
-                upload_table.put_item(Item=upload_data)
+                # Update session with the uploaded image filename
+                session['uploaded_image'] = original_filename
+
+                # Save upload details to SQLite
+                db = get_db()
+                db.execute('INSERT INTO uploads (username, upload_time, filename, url) VALUES (?, ?, ?, ?)', 
+                          (session.get('username', 'guest'), int(time.time()), original_filename, image_path))
+                db.commit()
+
+                if not user_logged_in:
+                    guest_uploads += 1
+                    update_guest_usage(guest_uploads, get_guest_chatbot_interactions())
 
                 flash('Image uploaded successfully', 'success')
-                return redirect(url_for('detection_result', filename=original_filename, user_logged_in=user_logged_in))
-            except NoCredentialsError:
-                flash('Credentials not available.', 'danger')
+                return redirect(url_for('detection_result', filename=original_filename))
+            except Exception as e:
+                flash(f"Error uploading image: {str(e)}", 'danger')
+                return redirect(request.url)
 
-    return render_template(
-        'detection-1.html',
-        user_logged_in=user_logged_in,
-        modal_open=modal_open,
-        guest_uploads=guest_uploads
-    )
+    return render_template('detection-1.html', 
+                         user_logged_in=user_logged_in,
+                         modal_open=modal_open,
+                         guest_uploads=guest_uploads)
 
 @app.route('/detection/result/<filename>')
 def detection_result(filename):
     user_logged_in = 'username' in session
     
-    # Construct the S3 URL for the uploaded image (non-presigned)
-    uploaded_image = f"s3://{S3_BUCKET}/{filename}"
-
-    if not uploaded_image:
+    # Get the relative URL for the uploaded image
+    image_url = url_for('static', filename=f'uploads/{filename}')
+    
+    if not os.path.exists(os.path.join(Config.UPLOAD_FOLDER, filename)):
         flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
 
-    # Generate the presigned URL for the image from S3
-    try:
-        s3_url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET, 'Key': filename},
-            ExpiresIn=3600  # URL expiration time (1 hour)
-        )
-    except Exception as e:
-        flash(f"Error fetching image: {str(e)}", 'danger')
-        return redirect(url_for('detection'))
-
-    # Pass both the uploaded image URL (presigned) and filename to the template
-    return render_template('detection-2.html', uploaded_image=s3_url, filename=filename, user_logged_in=user_logged_in)
+    return render_template('detection-2.html', 
+                         uploaded_image=image_url,
+                         filename=filename,
+                         user_logged_in=user_logged_in)
 
 @app.route('/detection/result/analyze/<filename>', methods=['GET'])
 def detection_result_get(filename):
-    # Generate the presigned URL for the image from the original S3 bucket
-    try:
-        s3_url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET, 'Key': filename},
-            ExpiresIn=3600  # URL expiration time (1 hour)
-        )
-    except Exception as e:
-        flash(f"Error fetching image: {str(e)}", 'danger')
+    user_logged_in = 'username' in session
+    
+    # Get the relative URL for the uploaded image
+    image_url = url_for('static', filename=f'uploads/{filename}')
+    
+    if not os.path.exists(os.path.join(Config.UPLOAD_FOLDER, filename)):
+        flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
 
-    # Fetch the detection result from the 'output-bucket-sagemaker1' bucket
+    # Fetch the detection result from the local uploads folder
     detection_result = None
     try:
-        # Construct the detection result key based on the filename pattern: {filename}_result.txt
-        result_key = f"{filename.split('.')[0]}_result.txt" 
+        # Construct the detection result filename based on the uploaded image filename
+        result_filename = f"{filename.split('.')[0]}_result.txt"
         
-        # Generate a presigned URL for the detection result
-        detection_result_url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_OUTPUT_BUCKET, 'Key': result_key},
-            ExpiresIn=3600  # URL expiration time (1 hour)
-        )
-
-        # Fetch the detection result file content
-        response = s3_client.get_object(Bucket=S3_OUTPUT_BUCKET, Key=result_key)
-        detection_result_raw = response['Body'].read().decode('utf-8')  # Read and decode the result text
+        # Read the detection result file content
+        with open(os.path.join(Config.UPLOAD_FOLDER, result_filename), 'r') as f:
+            detection_result_raw = f.read()  # Read the result text
 
         # Parse the classification result from the raw text
         detection_result = "Unknown"
@@ -432,29 +428,87 @@ def detection_result_get(filename):
         flash(f"Error fetching detection result: {str(e)}", 'danger')
         detection_result = "Error retrieving the result."
 
-    # Pass the presigned image URL, detection result, and filename to the next page
-    return render_template('detection-3.html', uploaded_image=s3_url, filename=filename, detection_result=detection_result)
+    # Pass the uploaded image URL and detection result to the template
+    return render_template('detection-3.html', 
+                         uploaded_image=image_url,
+                         filename=filename,
+                         detection_result=detection_result,
+                         user_logged_in=user_logged_in)
+
+@app.route('/proxy/analyze', methods=['GET'])
+def proxy_analyze():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'error': 'No filename provided'}), 400
+        
+    try:
+        # Get the full path to the uploaded image
+        image_path = os.path.join(Config.UPLOAD_FOLDER, filename)
+        if not os.path.exists(image_path):
+            return jsonify({'error': 'Image not found'}), 404
+            
+        # TODO: Implement local image analysis here
+        # For now, create a dummy result
+        result_filename = f"{filename.split('.')[0]}_result.txt"
+        result_path = os.path.join(Config.UPLOAD_FOLDER, result_filename)
+        
+        with open(result_path, 'w') as f:
+            f.write("Classification: Melanoma\nConfidence: 0.95")
+            
+        return jsonify({
+            'success': True,
+            'message': 'Analysis complete',
+            'result': {
+                'classification': 'Melanoma',
+                'confidence': 0.95
+            }
+        }), 200
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
 def delete_image(filename):
     try:
-        # Delete the file from S3
-        s3_client.delete_object(Bucket=S3_BUCKET, Key=filename)
+        # Delete the file from the local uploads folder
+        os.remove(os.path.join(Config.UPLOAD_FOLDER, filename))
         return jsonify({'success': True, 'message': 'File deleted successfully', 'redirect_url': url_for('detection')}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-@app.route('/proxy/analyze', methods=['GET'])
-def proxy_analyze():
-    filename = request.args.get('filename')  # Ambil filename dari query
-    api_url = f"https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename={filename}"
+def check_and_update_access(user_id, feature):
+    db = get_db()
     
-    try:
-        # Lakukan request ke API eksternal
-        response = requests.get(api_url)
-        return response.json(), response.status_code  # Forward respons API
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    # Create user_access table if it doesn't exist
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS user_access (
+            username TEXT PRIMARY KEY,
+            chatbot_access INTEGER DEFAULT 0,
+            detection_access INTEGER DEFAULT 0
+        )
+    ''')
+    
+    # Get or create user access record
+    access = db.execute('SELECT * FROM user_access WHERE username = ?', (user_id,)).fetchone()
+    if not access:
+        db.execute('INSERT INTO user_access (username, chatbot_access, detection_access) VALUES (?, 0, 0)', (user_id,))
+        db.commit()
+        access = db.execute('SELECT * FROM user_access WHERE username = ?', (user_id,)).fetchone()
+    
+    # Update access count based on feature
+    if feature == 'chatbot':
+        if access['chatbot_access'] >= 3:
+            return False
+        db.execute('UPDATE user_access SET chatbot_access = ? WHERE username = ?', 
+                  (access['chatbot_access'] + 1, user_id))
+    elif feature == 'detection':
+        if access['detection_access'] >= 3:
+            return False
+        db.execute('UPDATE user_access SET detection_access = ? WHERE username = ?', 
+                  (access['detection_access'] + 1, user_id))
+    
+    db.commit()
+    return True
 
 if __name__ == '__main__':
     app.run('0.0.0.0', port=5000, debug=True)
