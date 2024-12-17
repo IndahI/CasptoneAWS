@@ -78,12 +78,6 @@
   </form>
 </div>
 
-<!-- Loading Spinner -->
-<div id="loading-spinner">
-  <div class="spinner"></div>
-  <p>Processing... Please wait.</p>
-</div>
-
 <!-- Modal Delete Image -->
 <div class="modal" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
   <div class="modal-dialog" role="document">
@@ -143,24 +137,8 @@
     event.preventDefault();
 
     const filename = document.querySelector('input[name="filename"]').value;
-    const spinner = document.getElementById("loading-spinner");
 
-    // Show spinner
-    spinner.style.display = "block";
-
-    const apiUrl = `https://cors-anywhere.herokuapp.com/https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename=${filename}`;
-
-
-    fetch(apiUrl)
-      .then(response => response.json())
-      .then(data => {
-        spinner.style.display = "none"; // Hide spinner after API call
-        window.location.href = `/detection/result/analyze/${filename}`;
-      })
-      .catch(error => {
-        spinner.style.display = "none"; // Hide spinner on error
-        alert("Error: " + error.message);
-      });
+    const apiUrl = `https://6pwn52sok9.execute-api.us-east-1.amazonaws.com/dev/analyze?filename=${filename}`;
   });
 </script>
 
