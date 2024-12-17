@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
+from flask_cors import CORS
 from pymongo import MongoClient
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,6 +14,8 @@ import time
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whitebrim'
 app.config.from_object('config.Config')
+
+CORS(app)  # Default: mengizinkan semua origin
 
 #konfigurasi MongoDB
 # mongo_client = MongoClient(app.config['MONGO_URI'])
