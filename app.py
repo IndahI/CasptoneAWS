@@ -32,6 +32,8 @@ bedrock_client = boto3.client(
 #setting S3
 S3_BUCKET = 'upload-images-bucket-detection'
 S3_LOCATION = f'http://{S3_BUCKET}.s3.amazonaws.com/'
+S3_OUTPUT_BUCKET = 'output-bucket-sagemaker1'
+S3_LOCATION_OUTPUT = f'http://{S3_OUTPUT_BUCKET}.s3.amazonaws.com/'
 
 # Correct the region_name parameter
 s3_client = boto3.client('s3', region_name='us-east-1')
@@ -296,6 +298,7 @@ def logout():
     flash('Logged out successfully!', 'success')
     return redirect(url_for('index'))
 
+
 @app.route('/detection', methods=['GET', 'POST'])
 def detection():
     user_logged_in = 'username' in session
@@ -328,8 +331,6 @@ def detection():
         image = request.files['image']
         if image:
             original_filename = secure_filename(image.filename)
-            # Generate the S3-compatible filename
-            s3_filename = f"s3://{S3_BUCKET}/{original_filename}"
             try:
                 # Upload the file to S3
                 s3_client.upload_fileobj(
@@ -338,6 +339,7 @@ def detection():
                     original_filename,
                 )
                 # Update session with S3 URL
+                s3_filename = f"s3://{S3_BUCKET}/{original_filename}"
                 session['uploaded_image'] = s3_filename
 
                 # Save upload details to DynamoDB
@@ -362,32 +364,84 @@ def detection():
         guest_uploads=guest_uploads
     )
 
-
 @app.route('/detection/result/<filename>')
 def detection_result(filename):
     user_logged_in = 'username' in session
     
-    # Construct the S3 URL for the uploaded image
+    # Construct the S3 URL for the uploaded image (non-presigned)
     uploaded_image = f"s3://{S3_BUCKET}/{filename}"
 
     if not uploaded_image:
         flash('No image uploaded!', 'danger')
         return redirect(url_for('detection'))
 
-    return render_template('detection-2.html', uploaded_image=uploaded_image, user_logged_in=user_logged_in)
+    # Generate the presigned URL for the image from S3
+    try:
+        s3_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET, 'Key': filename},
+            ExpiresIn=3600  # URL expiration time (1 hour)
+        )
+    except Exception as e:
+        flash(f"Error fetching image: {str(e)}", 'danger')
+        return redirect(url_for('detection'))
 
+    # Pass both the uploaded image URL (presigned) and filename to the template
+    return render_template('detection-2.html', uploaded_image=s3_url, filename=filename, user_logged_in=user_logged_in)
+
+@app.route('/detection/result/analyze/<filename>', methods=['GET'])
+def detection_result_get(filename):
+    # Generate the presigned URL for the image from the original S3 bucket
+    try:
+        s3_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET, 'Key': filename},
+            ExpiresIn=3600  # URL expiration time (1 hour)
+        )
+    except Exception as e:
+        flash(f"Error fetching image: {str(e)}", 'danger')
+        return redirect(url_for('detection'))
+
+    # Fetch the detection result from the 'output-bucket-sagemaker1' bucket
+    detection_result = None
+    try:
+        # Construct the detection result key based on the filename pattern: {filename}_result.txt
+        result_key = f"{filename.split('.')[0]}_result.txt" 
+        
+        # Generate a presigned URL for the detection result
+        detection_result_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_OUTPUT_BUCKET, 'Key': result_key},
+            ExpiresIn=3600  # URL expiration time (1 hour)
+        )
+
+        # Fetch the detection result file content
+        response = s3_client.get_object(Bucket=S3_OUTPUT_BUCKET, Key=result_key)
+        detection_result_raw = response['Body'].read().decode('utf-8')  # Read and decode the result text
+
+        # Parse the classification result from the raw text
+        detection_result = "Unknown"
+        for line in detection_result_raw.splitlines():
+            if "Classification:" in line:  # Look for the classification line
+                detection_result = line.split(":", 1)[1].strip()  # Extract the value after the colon
+                break  # Stop parsing after finding the classification result
+
+    except Exception as e:
+        flash(f"Error fetching detection result: {str(e)}", 'danger')
+        detection_result = "Error retrieving the result."
+
+    # Pass the presigned image URL, detection result, and filename to the next page
+    return render_template('detection-3.html', uploaded_image=s3_url, filename=filename, detection_result=detection_result)
 
 @app.route('/delete-image/<filename>', methods=['DELETE'])
 def delete_image(filename):
     try:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            return jsonify({'success': True, 'redirect_url': url_for('detection')}), 200
-        else:
-            return jsonify({'success': False, 'message': 'File not found'}), 404
+        # Delete the file from S3
+        s3_client.delete_object(Bucket=S3_BUCKET, Key=filename)
+        return jsonify({'success': True, 'message': 'File deleted successfully', 'redirect_url': url_for('detection')}), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run('0.0.0.0', port=5000, debug=True)
