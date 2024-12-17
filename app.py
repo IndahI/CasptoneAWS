@@ -23,7 +23,7 @@ if not Config.GEMINI_API_KEY:
 else:
     genai.configure(api_key=Config.GEMINI_API_KEY)
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         print("Successfully initialized Gemini model")
     except Exception as e:
         print(f"Error initializing Gemini model: {str(e)}")
@@ -91,6 +91,11 @@ def get_ai_response(prompt):
         Your responses should be informative, accurate, and focused on melanoma-related topics.
         Always maintain a professional yet friendly tone, and if you're unsure about something, 
         recommend consulting with a healthcare professional.
+        Format your responses using Markdown for better readability:
+        - Use **bold** for emphasis
+        - Use bullet points for lists
+        - Use headers (##) for sections
+        - Use > for important notes/warnings
         Provide your responses in Bahasa Indonesia."""
         
         # Combine context and user prompt
@@ -143,9 +148,9 @@ def login():
             return redirect(url_for('index'))
         else:
             flash('Username atau password salah!', 'danger')
-            return redirect(url_for('login'))
+            return render_template('login.html', user_logged_in=False)
 
-    return render_template("login.html", user_logged_in=False)
+    return render_template('login.html', user_logged_in=False)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

@@ -5,9 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login Form</title>
-  <a
-    href="https://us-east-1plhbylayb.auth.us-east-1.amazoncognito.com/logout?client_id=71r0atc1n4dj2i82mr74ct768j&logout_uri=https://127.0.0.1:5000/"></a>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" />
 
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
@@ -29,11 +28,98 @@
       font-family: var(--font-family);
       background-color: var(--primary-color);
       display: flex;
+      flex-direction: column;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      overflow: hidden;
+      min-height: 100vh;
       padding: 1rem;
+    }
+
+    .flash-messages {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      width: 90%;
+      max-width: 500px;
+    }
+
+    .alert {
+      position: relative;
+      width: 100%;
+      margin-bottom: 1rem;
+      border: 1px solid transparent;
+      border-radius: 0.25rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      padding: 0.75rem 1rem;
+    }
+
+    .alert-dismissible {
+      padding-right: 4rem;
+    }
+
+    .alert-dismissible .close {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      right: 0;
+      width: auto !important;
+      padding: 0.75rem 1.25rem;
+      color: inherit;
+      background: transparent;
+      border: 0;
+      float: right;
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1;
+      opacity: .5;
+      transition: opacity .15s linear;
+    }
+
+    .alert-dismissible .close:hover {
+      opacity: 1;
+    }
+
+    .alert-dismissible .close span {
+      display: block;
+      line-height: 0.5;
+    }
+
+    .alert button.close {
+      width: auto !important;
+      background: none;
+      padding: 0.75rem 1.25rem;
+    }
+
+    .alert button.close:hover {
+      background: none;
+    }
+
+    .alert-danger {
+      color: #721c24;
+      background-color: #f8d7da;
+      border-color: #f5c6cb;
+    }
+
+    .alert-success {
+      color: #155724;
+      background-color: #d4edda;
+      border-color: #c3e6cb;
+    }
+
+    .alert.fade {
+      opacity: 0;
+      transition: opacity 0.15s linear;
+    }
+
+    .alert.fade.show {
+      opacity: 1;
+    }
+
+    .alert-message {
+      display: inline-block;
+      margin-right: 2rem;
     }
 
     .container {
@@ -41,6 +127,7 @@
       width: 100%;
       max-width: 450px;
       text-align: center;
+      margin-top: 60px;
     }
 
     .shape-circle {
@@ -270,6 +357,21 @@
 </head>
 
 <body>
+  <div class="flash-messages">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            <div class="alert-message">{{ message }}</div>
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+  </div>
+
   <div class="container">
     <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" class="logo" width="300" />
     <div class="shape-circle"></div>
@@ -302,6 +404,10 @@
     <p class="welcome-text-2">Keep Your Spirits Up</p>
     <p class="welcome-text-3">Stay Healthy</p>
   </div>
+
+  <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 
   <script>
     const inputs = document.querySelectorAll(".input-group input");

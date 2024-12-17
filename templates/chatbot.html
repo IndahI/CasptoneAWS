@@ -1,13 +1,15 @@
-{% extends "layout.html" %} {% block title %}Melanoma Scan{%
-  endblock %} {% block content %}
-  
+{% extends "layout.html" %} {% block title %}Melanoma Scan{% endblock %} {% block content %}
+
+  <!-- Add marked.js for Markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
   <!-- Chatbot -->
   <div class="chatbot-container">
     <div class="chatbox">
       <div class="chatbox-header">Chatbot</div>
       <div class="chatbox-body" id="chatbox-body">
         <div class="message bot">
-          <span> Silahkan tanya sesuatu </span>
+          <span>Silahkan tanya sesuatu</span>
         </div>
       </div>
       <div class="chatbox-footer">
@@ -20,7 +22,56 @@
     const userInput = document.getElementById("user-input");
     const sendButton = document.getElementById("send-button");
     const chatboxBody = document.getElementById("chatbox-body");
-  
+
+    // Configure marked.js
+    marked.setOptions({
+      breaks: true,
+      gfm: true
+    });
+
+    // Typing effect function
+    function typeMessage(element, message, index = 0) {
+      if (index < message.length) {
+        const chunk = message.slice(index, index + 3); // Type 3 characters at a time
+        element.innerHTML = marked.parse(message.slice(0, index + 3));
+        setTimeout(() => typeMessage(element, message, index + 3), 20); // Adjust speed here (30ms)
+      } else {
+        // Add action icons after typing is complete
+        addActionIcons(element, message);
+      }
+    }
+
+    // Function to add action icons
+    function addActionIcons(element, originalMessage) {
+      const iconContainer = document.createElement("div");
+      iconContainer.classList.add("bot-icons");
+
+      const copyIcon = document.createElement("i");
+      copyIcon.classList.add("fas", "fa-copy", "icon", "copy-icon", "mr-2");
+      copyIcon.addEventListener("click", () => {
+        navigator.clipboard.writeText(originalMessage)
+          .then(() => alert("Text copied to clipboard!"))
+          .catch(() => alert("Failed to copy text"));
+      });
+
+      const likeIcon = document.createElement("i");
+      likeIcon.classList.add("fas", "fa-thumbs-up", "icon", "like-icon", "mr-2");
+      likeIcon.addEventListener("click", () => {
+        alert("You liked the message!");
+      });
+
+      const dislikeIcon = document.createElement("i");
+      dislikeIcon.classList.add("fas", "fa-thumbs-down", "icon", "dislike-icon", "mr-2");
+      dislikeIcon.addEventListener("click", () => {
+        alert("You disliked the message!");
+      });
+
+      iconContainer.appendChild(copyIcon);
+      iconContainer.appendChild(likeIcon);
+      iconContainer.appendChild(dislikeIcon);
+      element.appendChild(iconContainer);
+    }
+
     function sendMessage() {
       const userMessage = userInput.value.trim();
       if (userMessage) {
@@ -30,17 +81,17 @@
         userMessageElement.textContent = userMessage;
         chatboxBody.appendChild(userMessageElement);
         userInput.value = "";
-        
+
         // Scroll to bottom
         chatboxBody.scrollTop = chatboxBody.scrollHeight;
-  
+
         // Add typing indicator
         const botMessageElement = document.createElement("div");
         botMessageElement.classList.add("message", "bot");
         botMessageElement.textContent = "Bot is typing...";
         chatboxBody.appendChild(botMessageElement);
         chatboxBody.scrollTop = chatboxBody.scrollHeight;
-  
+
         // Send request to server
         fetch('/chatbot', {
           method: "POST",
@@ -52,54 +103,28 @@
         .then(response => response.json())
         .then(data => {
           if (data.status === 'success') {
-            botMessageElement.textContent = data.message;
+            botMessageElement.textContent = ''; // Clear typing indicator
+            typeMessage(botMessageElement, data.message); // Start typing effect
           } else {
             botMessageElement.textContent = data.message || 'Terjadi kesalahan. Silakan coba lagi.';
             botMessageElement.classList.add('error');
+            addActionIcons(botMessageElement, data.message);
           }
-  
-          // Add action icons
-          const iconContainer = document.createElement("div");
-          iconContainer.classList.add("bot-icons");
-  
-          const copyIcon = document.createElement("i");
-          copyIcon.classList.add("fas", "fa-copy", "icon", "copy-icon", "mr-2");
-          copyIcon.addEventListener("click", () => {
-            navigator.clipboard.writeText(botMessageElement.textContent)
-              .then(() => alert("Text copied to clipboard!"))
-              .catch(() => alert("Failed to copy text"));
-          });
-  
-          const likeIcon = document.createElement("i");
-          likeIcon.classList.add("fas", "fa-thumbs-up", "icon", "like-icon", "mr-2");
-          likeIcon.addEventListener("click", () => {
-            alert("You liked the message!");
-          });
-  
-          const dislikeIcon = document.createElement("i");
-          dislikeIcon.classList.add("fas", "fa-thumbs-down", "icon", "dislike-icon", "mr-2");
-          dislikeIcon.addEventListener("click", () => {
-            alert("You disliked the message!");
-          });
-  
-          iconContainer.appendChild(copyIcon);
-          iconContainer.appendChild(likeIcon);
-          iconContainer.appendChild(dislikeIcon);
-          botMessageElement.appendChild(iconContainer);
         })
         .catch(error => {
           botMessageElement.textContent = "Maaf, terjadi kesalahan. Silakan coba lagi nanti.";
           botMessageElement.classList.add('error');
+          addActionIcons(botMessageElement, "Maaf, terjadi kesalahan. Silakan coba lagi nanti.");
         })
         .finally(() => {
           chatboxBody.scrollTop = chatboxBody.scrollHeight;
         });
       }
     }
-  
+
     // Send on button click
     sendButton.addEventListener("click", sendMessage);
-  
+
     // Send on Enter key
     userInput.addEventListener("keypress", (event) => {
       if (event.key === "Enter") {
@@ -108,12 +133,73 @@
       }
     });
   </script>
-  
+
   <style>
     .message.error {
       color: #721c24;
       background-color: #f8d7da;
       border-color: #f5c6cb;
+    }
+
+    /* Markdown Styles */
+    .message.bot {
+      font-family: var(--font-family);
+      line-height: 1.6;
+    }
+
+    .message.bot strong,
+    .message.bot b {
+      font-weight: 600;
+    }
+
+    .message.bot em,
+    .message.bot i {
+      font-style: italic;
+    }
+
+    .message.bot ul,
+    .message.bot ol {
+      margin-left: 1.5em;
+      margin-bottom: 1em;
+    }
+
+    .message.bot li {
+      margin-bottom: 0.5em;
+    }
+
+    .message.bot p {
+      margin-bottom: 1em;
+    }
+
+    .message.bot h1,
+    .message.bot h2,
+    .message.bot h3,
+    .message.bot h4 {
+      margin-top: 1em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+    }
+
+    .message.bot code {
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+
+    .message.bot pre {
+      background-color: rgba(0, 0, 0, 0.05);
+      padding: 1em;
+      border-radius: 5px;
+      overflow-x: auto;
+      margin-bottom: 1em;
+    }
+
+    .message.bot blockquote {
+      border-left: 4px solid var(--primary-color);
+      margin-left: 0;
+      padding-left: 1em;
+      color: #666;
     }
   </style>
 {% endblock %}
