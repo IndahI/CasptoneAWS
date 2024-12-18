@@ -43,14 +43,23 @@ S3_LOCATION_OUTPUT = f'http://{S3_OUTPUT_BUCKET}.s3.amazonaws.com/'
 s3_client = boto3.client('s3', region_name='us-east-1')
 
 # Function to get response from Bedrock
+def preprocess_prompt(user_input):
+    """
+    Memastikan input pengguna diformat sesuai kebutuhan model Claude.
+    """
+    return f"Human: {user_input}\nAssistant:"
+
 def get_bedrock_response(prompt):
     try:
+        # Preprocessing input user agar sesuai format Claude
+        formatted_prompt = preprocess_prompt(prompt)
+
         response = bedrock_client.invoke_model(
             modelId='anthropic.claude-v2',  # Gunakan model yang benar
             contentType='application/json',  # Pengaturan content-type
             accept='application/json',
             body=json.dumps({
-                "prompt": prompt,
+                "prompt": formatted_prompt,
                 "max_tokens_to_sample": 1000,
                 "temperature": 0.9
             })
@@ -59,8 +68,7 @@ def get_bedrock_response(prompt):
         return json.loads(response_body).get('completion', "Tidak ada jawaban yang diterima.")
     except Exception as e:
         print("Error details:", str(e))  # Log error
-        return "Terjadi kesalahan saat mengakses model AI."
-    
+        return "Terjadi kesalahan saat mengakses model AI." 
 
 dynamodb = boto3.resource('dynamodb',region_name='us-east-1')
 user_access_table = dynamodb.Table('user_access')
@@ -265,17 +273,11 @@ def chatbot():
     guest_uploads, guest_chatbot_interactions = get_guest_usage()
    
     if request.method == 'POST':
-        if not user_logged_in and guest_chatbot_interactions >= 3:
-            return jsonify({'error': 'You have reached the usage limit for the Chatbot. Please log in or register to continue.'}), 403
-
         user_message = request.form['message'].strip()
         if user_message:
             # Get response from Bedrock
             response = get_bedrock_response(user_message)
 
-            if not user_logged_in:
-                guest_chatbot_interactions += 1
-                update_guest_usage(guest_uploads, guest_chatbot_interactions)
             
             return jsonify({'response': response})
 
